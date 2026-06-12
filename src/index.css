@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-bank-blue: #0057FF;
+  --color-bank-dark: #001F54;
+  --color-bank-bg-dark: #070d19;
+  --color-bank-slate: #0f172a;
+  
+  --animate-pulse-subtle: pulse-subtle 2s infinite ease-in-out;
+  --animate-fade-in-up: fade-in-up 0.4s ease-out forwards;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom visual card flip transitions */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Base resets & layout settings */
+body {
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Interactive custom styled circular animations for PIN input step */
+.pin-dot {
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Premium Light Theme Contrast & Soft Styling */
+.light-theme {
+  background-color: #f3f5f9 !important;
+  color: #1e293b !important;
+}
+
+/* Soft white container panels with faint modern border */
+.light-theme .bg-white,
+.light-theme .bg-slate-900\/60,
+.light-theme .bg-slate-900\/40,
+.light-theme .bg-slate-900\/30,
+.light-theme .rounded-3xl.border,
+.light-theme .rounded-2xl.border {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Inputs and interactive selects should be clean with dark text & solid borders */
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Ensure text headers has very clear/dark contrast */
+.light-theme h1,
+.light-theme h2,
+.light-theme h3,
+.light-theme h4,
+.light-theme h5,
+.light-theme h6,
+.light-theme th,
+.light-theme .text-white {
+  color: #0f172a !important;
+}
+
+/* Standard description and subheadings under light theme */
+.light-theme p,
+.light-theme td,
+.light-theme label,
+.light-theme span,
+.light-theme li,
+.light-theme .text-slate-300,
+.light-theme .text-slate-400 {
+  color: #334155 !important;
+}
+
+/* Preserving functional items: badges, buttons, active states, brand colors */
+.light-theme .text-blue-500,
+.light-theme .text-blue-600,
+.light-theme .text-emerald-400,
+.light-theme .text-emerald-500,
+.light-theme .text-green-400,
+.light-theme .text-green-500,
+.light-theme .text-red-500,
+.light-theme .text-red-400,
+.light-theme .text-amber-400,
+.light-theme .bg-blue-600,
+.light-theme .bg-green-600,
+.light-theme .bg-red-600,
+.light-theme .bg-red-650,
+.light-theme button.bg-blue-600,
+.light-theme button.bg-green-600,
+.light-theme button.bg-red-650,
+.light-theme button.bg-red-600 {
+  color: inherit !important;
+  background-color: inherit !important;
+  border-color: inherit !important;
+}
+
+/* Specific buttons hover styling in light-theme */
+.light-theme button:not(.bg-blue-600):not(.bg-green-600):not(.bg-red-600):not(.bg-red-650):not(.bg-slate-900) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Ensure elite credit card renders with beautiful dark credentials overlay to maintain authentic physical aspect */
+.light-theme .bg-gradient-to-br.from-blue-600 {
+  background: linear-gradient(135deg, #1e40af 0%, #1e1b4b 60%, #0f172a 100%) !important;
+}
+.light-theme .from-blue-600 * {
+  color: #ffffff !important;
+}
+.light-theme .from-blue-600 span,
+.light-theme .from-blue-600 p,
+.light-theme .from-blue-600 h3 {
+  color: #ffffff !important;
+}
+

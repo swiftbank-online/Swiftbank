@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net - Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE PRIMITIVES AND UTILITIES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Role verification using database lookups
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true) ||
+        request.auth.token.email == "swiftbank.online@gmail.com" ||
+        request.auth.token.email == "georgestetson343@gmail.com"
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- ENTITY VALIDATORS ---
+
+    // User Validator
+    function isValidUser(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.fullName is string && data.fullName.size() <= 100
+        && data.email is string && data.email.size() <= 150
+        && data.accountNumber is string && data.accountNumber.size() == 10
+        && data.balance is number
+        && data.pin is string && data.pin.size() == 4
+        && (data.status == "active" || data.status == "blocked")
+        && (data.profileImage == null || (data.profileImage is string && data.profileImage.size() <= 500))
+        && (data.isAdmin == null || data.isAdmin is bool);
+    }
+
+    // Transaction Validator
+    function isValidTransaction(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && (data.type == "deposit" || data.type == "withdrawal" || data.type == "local_transfer" || data.type == "intl_transfer")
+        && data.amount is number && data.amount > 0
+        && (data.status == "pending" || data.status == "approved" || data.status == "rejected");
+    }
+
+    // Card Validator
+    function isValidCard(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.cardNumber is string && data.cardNumber.size() <= 30
+        && data.cardHolder is string && data.cardHolder.size() <= 100
+        && data.expiryDate is string && data.expiryDate.size() <= 10
+        && data.cvv is string && data.cvv.size() == 3
+        && (data.brand == "Visa" || data.brand == "Mastercard" || data.brand == "American Express")
+        && data.dailyLimit is number
+        && (data.status == "active" || data.status == "pending" || data.status == "rejected");
+    }
+
+    // Message Validator
+    function isValidMessage(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.text is string && data.text.size() <= 5000
+        && (data.userId == null || (data.userId is string && data.userId.size() <= 128));
+    }
+
+    // Setting Validator
+    function isValidSetting(data) {
+      return data.heroTitle is string && data.heroTitle.size() <= 2000
+        && data.heroSub is string && data.heroSub.size() <= 6000
+        && data.contactAddress is string && data.contactAddress.size() <= 1000
+        && data.contactPhone is string && data.contactPhone.size() <= 100
+        && data.contactEmail is string && data.contactEmail.size() <= 300;
+    }
+
+    // Notification Validator
+    function isValidNotification(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.message is string && data.message.size() <= 2000;
+    }
+
+
+    // --- MATCH BLOCKS FOR COLLECTIONS ---
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().balance == 100 && incoming().isAdmin == false;
+      allow update: if (isOwner(userId) && isValidUser(incoming()) && (
+        // Only allow editing safe profile fields if not blocked
+        existing().status == "active" &&
+        incoming().balance == existing().balance &&
+        incoming().accountNumber == existing().accountNumber &&
+        incoming().status == existing().status &&
+        incoming().isAdmin == existing().isAdmin &&
+        incoming().diff(existing()).affectedKeys().hasAny(['fullName', 'profileImage', 'pin', 'age', 'country'])
+      )) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 2. Transactions Collection
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidTransaction(incoming()) && isOwner(incoming().userId);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 3. Cards Collection
+    match /cards/{cardId} {
+      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidCard(incoming()) && isOwner(incoming().userId) && incoming().status == "pending";
+      allow update: if isAdmin() || (isOwner(existing().userId) && isValidCard(incoming()) && incoming().status == "pending" && incoming().diff(existing()).affectedKeys().hasOnly(['billingAddress', 'city', 'zipCode', 'cardHolder']));
+      allow delete: if isAdmin();
+    }
+
+    // 4. Messages Collection (Real-time live support chat system)
+    match /messages/{messageId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidMessage(incoming()) && (isOwner(incoming().userId) || isOwner(incoming().senderId) || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 5. Settings Collection (Global Branding and FAQs)
+    match /settings/{settingId} {
+      allow read: if true; // Publicly readable for landing page
+      allow write: if isAdmin() && isValidSetting(incoming());
+    }
+
+    // 6. Notifications Collection
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isSignedIn() && isOwner(resource.data.userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // 7. Explicit Admin Role Access Document
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Provisioned exclusively on the backend / cloud side
+    }
+  }
+}

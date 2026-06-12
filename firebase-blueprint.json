@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Swift Bank account holder details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "integer" },
+        "country": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "balance": { "type": "number" },
+        "pin": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "blocked"] },
+        "profileImage": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "isAdmin": { "type": "boolean" }
+      },
+      "required": ["userId", "fullName", "email", "accountNumber", "balance", "pin", "status", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial records for transfers, deposits, and withdrawals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "local_transfer", "intl_transfer"] },
+        "amount": { "type": "number" },
+        "title": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "recipientAccount": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "intlMethod": { "type": "string" }
+      },
+      "required": ["id", "userId", "type", "amount", "status", "createdAt"]
+    },
+    "Card": {
+      "title": "Card",
+      "description": "Active credit/debit card details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "cardNumber": { "type": "string" },
+        "cardHolder": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "cvv": { "type": "string" },
+        "brand": { "type": "string", "enum": ["Visa", "Mastercard", "American Express"] },
+        "currency": { "type": "string" },
+        "dailyLimit": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "pending", "rejected"] },
+        "billingAddress": { "type": "string" },
+        "city": { "type": "string" },
+        "zipCode": { "type": "string" }
+      },
+      "required": ["id", "userId", "cardNumber", "cardHolder", "expiryDate", "cvv", "brand", "currency", "dailyLimit", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Support conversation thread messages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "ticketStatus": { "type": "string", "enum": ["open", "closed"] }
+      },
+      "required": ["id", "senderId", "senderName", "text", "createdAt"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Landing page and footer contents editable by admins",
+      "type": "object",
+      "properties": {
+        "heroTitle": { "type": "string" },
+        "heroSub": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "faviconUrl": { "type": "string" },
+        "contactAddress": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "faqs": { "type": "string" }
+      },
+      "required": ["heroTitle", "heroSub", "contactAddress", "contactPhone", "contactEmail"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User specific warnings and transaction reports",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "title", "message", "createdAt", "read"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Swift Bank account registrations"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Records representing user funds and movements"
+    },
+    "/cards/{cardId}": {
+      "schema": "Card",
+      "description": "Card application records and active virtual credit details"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Live support chat system"
+    },
+    "/settings/{settingId}": {
+      "schema": "AppSetting",
+      "description": "Bank-wide landing content settings"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User alert systems"
+    }
+  }
+}

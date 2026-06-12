@@ -1,0 +1,6 @@
+{
+  "name": "Swift Bank",
+  "description": "Premium secure digital online banking platform featuring fully persistent mock transactions, secure PIN authorization, card applications, real-time live chat with admins, and interactive user management dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
