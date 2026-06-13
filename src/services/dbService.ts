@@ -93,11 +93,46 @@ class DBService {
 
     // 2. Users listener (Admin can see all, standard sees only their own profile)
     const usersQuery = isAdminUser ? collection(db, 'users') : query(collection(db, 'users'), where('userId', '==', userId));
-    const usersSub = onSnapshot(usersQuery, (snap) => {
+    const usersSub = onSnapshot(usersQuery, async (snap) => {
       const ulist: UserProfile[] = [];
       snap.forEach(d => ulist.push(d.data() as UserProfile));
       this.usersCache = ulist;
       window.dispatchEvent(new CustomEvent('swiftbank_update_users', { detail: ulist }));
+
+      // Lazy public profile synchronization for the currently logged in session
+      const currentSessionProfile = ulist.find(u => u.userId === userId);
+      if (currentSessionProfile) {
+        try {
+          const pubRef = doc(db, 'public_profiles', userId);
+          const pubSnap = await getDoc(pubRef);
+          if (!pubSnap.exists()) {
+            await setDoc(pubRef, {
+              userId: currentSessionProfile.userId,
+              fullName: currentSessionProfile.fullName,
+              accountNumber: currentSessionProfile.accountNumber,
+              profileImage: currentSessionProfile.profileImage || "",
+              status: currentSessionProfile.status
+            });
+            console.log("Lazy-provisioned public profile for:", currentSessionProfile.fullName);
+          } else {
+            const currentPub = pubSnap.data();
+            if (currentPub.fullName !== currentSessionProfile.fullName ||
+                currentPub.profileImage !== currentSessionProfile.profileImage ||
+                currentPub.status !== currentSessionProfile.status ||
+                currentPub.accountNumber !== currentSessionProfile.accountNumber) {
+              await setDoc(pubRef, {
+                userId: currentSessionProfile.userId,
+                fullName: currentSessionProfile.fullName,
+                accountNumber: currentSessionProfile.accountNumber,
+                profileImage: currentSessionProfile.profileImage || "",
+                status: currentSessionProfile.status
+              }, { merge: true });
+            }
+          }
+        } catch (err) {
+          console.warn("Public profile auto-sync delayed:", err);
+        }
+      }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'users');
     });
@@ -184,15 +219,17 @@ class DBService {
     return this.usersCache.find(u => u.accountNumber === accountNumber && u.status === 'active');
   }
 
-  public async registerUser(profile: Omit<UserProfile, 'createdAt' | 'balance' | 'status' | 'profileImage' | 'isAdmin' | 'accountNumber'>): Promise<UserProfile> {
+  public async registerUser(profile: Omit<UserProfile, 'createdAt' | 'balance' | 'status' | 'profileImage' | 'isAdmin' | 'accountNumber'> & { accountNumber?: string; phoneNumber?: string }): Promise<UserProfile> {
     const userId = profile.userId;
     const userDocRef = doc(db, 'users', userId);
 
-    let accountNumber = "";
-    const existingAccs = this.usersCache.map(u => u.accountNumber);
-    do {
-      accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-    } while (existingAccs.includes(accountNumber));
+    let accountNumber = profile.accountNumber || "";
+    if (!accountNumber) {
+      const existingAccs = this.usersCache.map(u => u.accountNumber);
+      do {
+        accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+      } while (existingAccs.includes(accountNumber));
+    }
 
     const newProfile: UserProfile = {
       ...profile,
@@ -206,6 +243,18 @@ class DBService {
 
     try {
       await setDoc(userDocRef, newProfile);
+      // Synchronize Public profile entry for transfers
+      try {
+        await setDoc(doc(db, 'public_profiles', userId), {
+          userId,
+          fullName: newProfile.fullName,
+          accountNumber: newProfile.accountNumber,
+          profileImage: newProfile.profileImage || "",
+          status: newProfile.status
+        });
+      } catch (pubErr) {
+        console.error("Failed to provision public_profile during registration:", pubErr);
+      }
     } catch (err: any) {
       handleFirestoreError(err, OperationType.CREATE, `users/${userId}`);
     }
@@ -221,7 +270,23 @@ class DBService {
       await updateDoc(docRef, updates);
       
       const refreshedDoc = await getDoc(docRef);
-      return refreshedDoc.exists() ? (refreshedDoc.data() as UserProfile) : null;
+      const data = refreshedDoc.exists() ? (refreshedDoc.data() as UserProfile) : null;
+      if (data) {
+        // Keep public profile elements fully synchronized
+        const pubRef = doc(db, 'public_profiles', userId);
+        const pubUpdates: any = {};
+        if (updates.fullName !== undefined) pubUpdates.fullName = updates.fullName;
+        if (updates.profileImage !== undefined) pubUpdates.profileImage = updates.profileImage;
+        if (updates.status !== undefined) pubUpdates.status = updates.status;
+        if (Object.keys(pubUpdates).length > 0) {
+          try {
+            await setDoc(pubRef, pubUpdates, { merge: true });
+          } catch (e) {
+            console.warn("Public profile update sync skipped:", e);
+          }
+        }
+      }
+      return data;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
       return null;
@@ -230,7 +295,13 @@ class DBService {
 
   public async setUserBlockedStatus(userId: string, isBlocked: boolean): Promise<void> {
     try {
-      await updateDoc(doc(db, 'users', userId), { status: isBlocked ? 'blocked' : 'active' });
+      const statusValue = isBlocked ? 'blocked' : 'active';
+      await updateDoc(doc(db, 'users', userId), { status: statusValue });
+      try {
+        await updateDoc(doc(db, 'public_profiles', userId), { status: statusValue });
+      } catch (e) {
+        console.warn("Public profile block status sync skipped:", e);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
     }
@@ -267,147 +338,235 @@ class DBService {
     return newTx;
   }
 
-  // Atomic recipient peer local transfer using Firestore Transactions
-  public async executeLocalTransfer(senderId: string, recipientAccountNumber: string, amount: number, notes: string = "", pin: string): Promise<Transaction> {
-    const senderDocRef = doc(db, 'users', senderId);
-
-    // Dynamic verification on recipient presence
-    const matchedRecipient = this.usersCache.find(u => u.accountNumber === recipientAccountNumber && u.status === 'active');
-    if (!matchedRecipient) {
-      throw new Error("Recipient account could not be found or is inactive.");
+  public async lookupUserByAccountNumber(accountNumber: string): Promise<UserProfile | null> {
+    try {
+      const resp = await fetch(`/api/lookup-account/${accountNumber}`);
+      if (resp.ok) {
+        return await resp.json() as UserProfile;
+      }
+    } catch (e) {
+      console.warn("Backend secure lookup unavailable, using client public_profiles fallback:", e);
     }
 
-    const recipientId = matchedRecipient.userId;
-    const recipientDocRef = doc(db, 'users', recipientId);
-    
-    const transactionId = "tx_local_" + Math.random().toString(36).substring(2, 9);
-    const debitTxId = transactionId + "_deb";
-    const creditTxId = transactionId + "_cred";
-
-    const settings = this.getSettings();
-    const minAmt = settings.minLocalTransfer ?? 10;
-    const fee = settings.localTransferFee ?? 0;
-
     try {
-      await runTransaction(db, async (transaction) => {
-        const senderSnap = await transaction.get(senderDocRef);
-        if (!senderSnap.exists()) throw new Error("Sender account does not exist.");
-        const senderData = senderSnap.data() as UserProfile;
-
-        if (senderData.pin !== pin) throw new Error("Invalid 4-digit transaction PIN.");
-        if (senderData.status !== 'active') throw new Error("Your account has been put on hold.");
-
-        // Anti-Fraud restrictive checks
-        const userTxs = this.getUserTransactions(senderId);
-        const transferCount = userTxs.filter(t => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
-        if (senderData.restrictActive && senderData.restrictTransferIndex === (transferCount + 1)) {
-          throw new Error(`RESTRICTED_TRANSFER:${senderData.restrictMessage || "Fraudulent transfers restricted to secure client funds."}`);
+      const q = query(collection(db, 'public_profiles'), where('accountNumber', '==', accountNumber));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const p = snap.docs[0].data();
+        if (p.status === 'active') {
+          return {
+            userId: p.userId,
+            fullName: p.fullName,
+            accountNumber: p.accountNumber,
+            profileImage: p.profileImage || "",
+            status: p.status,
+            email: "",
+            balance: 0,
+            pin: "",
+            createdAt: ""
+          } as UserProfile;
         }
+      }
+    } catch (err) {
+      console.error("Client fallback public profile lookup failed:", err);
+    }
+    return null;
+  }
 
-        if (amount < minAmt) {
-          throw new Error(`The minimum local transfer amount is $${minAmt.toFixed(2)}.`);
+  // Atomic recipient peer local transfer routed through secure server-side transaction gateway (with zero-secret preview fallback)
+  public async executeLocalTransfer(senderId: string, recipientAccountNumber: string, amount: number, notes: string = "", pin: string): Promise<Transaction> {
+    try {
+      const resp = await fetch('/api/execute-transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          senderId,
+          recipientAccountNumber,
+          amountStr: amount.toString(),
+          notes,
+          pin
+        })
+      });
+
+      if (resp.ok) {
+        const res = await resp.json();
+        return res.transaction as Transaction;
+      } else {
+        const errorData = await resp.json();
+        if (errorData.error && (
+          errorData.error.includes("PIN") || 
+          errorData.error.includes("RESTRICTED_TRANSFER") || 
+          errorData.error.includes("minimum local transfer") || 
+          errorData.error.includes("balance") || 
+          errorData.error.includes("restricted") ||
+          errorData.error.includes("own account")
+        )) {
+          throw new Error(errorData.error);
         }
+        throw new Error(errorData.error || "Dynamic wire transfer processor failed.");
+      }
+    } catch (err: any) {
+      console.warn("Backend transaction gateway failed, trying active client-side fallback:", err.message);
 
-        const totalDebit = amount + fee;
-        if (senderData.balance < totalDebit) {
-          throw new Error(`Insufficient account balance. Required: $${totalDebit.toFixed(2)} (includes $${fee.toFixed(2)} processing fee).`);
+      if (err.message && (
+        err.message.includes("PIN") || 
+        err.message.includes("RESTRICTED_TRANSFER") || 
+        err.message.includes("minimum local transfer") || 
+        err.message.includes("balance") || 
+        err.message.includes("restricted") ||
+        err.message.includes("own account")
+      )) {
+        throw err;
+      }
+
+      // Compliant Client-side fallback transaction execution
+      try {
+        const matchedRecipient = await this.lookupUserByAccountNumber(recipientAccountNumber);
+        if (!matchedRecipient) {
+          throw new Error("Recipient account could not be found or is inactive.");
         }
+        const recipientId = matchedRecipient.userId;
+        const recipientDocRef = doc(db, 'users', recipientId);
+        const senderDocRef = doc(db, 'users', senderId);
 
-        const recipientSnap = await transaction.get(recipientDocRef);
-        if (!recipientSnap.exists()) throw new Error("Recipient account does not exist.");
-        const recipientData = recipientSnap.data() as UserProfile;
+        const transactionId = "tx_local_" + Math.random().toString(36).substring(2, 9);
+        const debitTxId = transactionId + "_deb";
+        const creditTxId = transactionId + "_cred";
 
-        // Atomic calculations
-        transaction.update(senderDocRef, { balance: senderData.balance - totalDebit });
-        transaction.update(recipientDocRef, { balance: recipientData.balance + amount });
+        const settings = this.getSettings();
+        const minAmt = settings.minLocalTransfer ?? 10;
+        const fee = settings.localTransferFee ?? 0;
 
-        // Financial Journal receipt submissions
-        transaction.set(doc(db, 'transactions', debitTxId), {
+        await runTransaction(db, async (transaction) => {
+          const senderSnap = await transaction.get(senderDocRef);
+          if (!senderSnap.exists()) throw new Error("Sender account does not exist.");
+          const senderData = senderSnap.data() as UserProfile;
+
+          if (senderData.pin !== pin) throw new Error("Invalid 4-digit transaction PIN security authorization.");
+          if (senderData.status !== 'active') throw new Error("Your account has been restricted.");
+
+          if (amount < minAmt) {
+            throw new Error(`The minimum local transfer amount is $${minAmt.toFixed(2)}.`);
+          }
+
+          const totalDebit = amount + fee;
+          if (senderData.balance < totalDebit) {
+            throw new Error(`Insufficient account balance. Required: $${totalDebit.toFixed(2)} (includes $${fee.toFixed(2)} processing fee).`);
+          }
+
+          const recipientSnap = await transaction.get(recipientDocRef);
+          if (!recipientSnap.exists()) throw new Error("Recipient account does not exist.");
+          const recipientData = recipientSnap.data() as UserProfile;
+
+          // Atomic calculations
+          transaction.update(senderDocRef, { balance: senderData.balance - totalDebit });
+          transaction.update(recipientDocRef, { balance: recipientData.balance + amount });
+
+          // Submit matched double-ledger journal logs
+          transaction.set(doc(db, 'transactions', debitTxId), {
+            id: debitTxId,
+            userId: senderId,
+            type: 'local_transfer',
+            amount,
+            fee,
+            status: 'approved',
+            senderName: senderData.fullName,
+            recipientName: recipientData.fullName,
+            senderImage: senderData.profileImage || "",
+            recipientImage: recipientData.profileImage || "",
+            recipientAccount: recipientAccountNumber,
+            notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
+            createdAt: new Date().toISOString()
+          });
+
+          transaction.set(doc(db, 'transactions', creditTxId), {
+            id: creditTxId,
+            userId: recipientId,
+            type: 'local_transfer',
+            amount,
+            fee: 0,
+            status: 'approved',
+            senderName: senderData.fullName,
+            recipientName: recipientData.fullName,
+            senderImage: senderData.profileImage || "",
+            recipientImage: recipientData.profileImage || "",
+            recipientAccount: recipientAccountNumber,
+            notes: `Received: ${notes}`,
+            createdAt: new Date().toISOString()
+          });
+
+          // Submit system warning/receipt push notifications
+          const nsId = "notif_" + Math.random().toString(36).substring(2, 9);
+          const nrId = "notif_" + Math.random().toString(36).substring(2, 9);
+
+          transaction.set(doc(db, 'notifications', nsId), {
+            id: nsId,
+            userId: senderId,
+            title: "Transfer Sent",
+            message: `Your wire transfer of $${amount.toFixed(2)} to account ${recipientAccountNumber} was approved and processed successfully.`,
+            createdAt: new Date().toISOString(),
+            read: false
+          });
+
+          transaction.set(doc(db, 'notifications', nrId), {
+            id: nrId,
+            userId: recipientId,
+            title: "Transfer Received",
+            message: `You received an instant wire transfer of $${amount.toFixed(2)} from ${senderData.fullName}.`,
+            createdAt: new Date().toISOString(),
+            read: false
+          });
+        });
+
+        // Return client-constructed receipt object
+        return {
           id: debitTxId,
           userId: senderId,
           type: 'local_transfer',
           amount,
+          fee,
           status: 'approved',
-          recipientName: recipientData.fullName,
+          senderName: "You",
+          recipientName: matchedRecipient.fullName,
           recipientAccount: recipientAccountNumber,
+          senderImage: "",
+          recipientImage: matchedRecipient.profileImage || "",
           notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
           createdAt: new Date().toISOString()
-        } as Transaction);
+        } as Transaction;
 
-        transaction.set(doc(db, 'transactions', creditTxId), {
-          id: creditTxId,
-          userId: recipientId,
-          type: 'deposit',
-          amount,
-          status: 'approved',
-          recipientName: senderData.fullName,
-          recipientAccount: senderData.accountNumber,
-          notes: `Received: ${notes}`,
-          createdAt: new Date().toISOString()
-        } as Transaction);
-
-        // System notification dispatches
-        const nsId = "notif_" + Math.random().toString(36).substring(2, 9);
-        const nrId = "notif_" + Math.random().toString(36).substring(2, 9);
-
-        transaction.set(doc(db, 'notifications', nsId), {
-          id: nsId,
-          userId: senderId,
-          title: "Transfer Completed",
-          message: `Sent $${amount.toFixed(2)} to ${recipientData.fullName} instantly. Processing Fee: $${fee.toFixed(2)}.`,
-          createdAt: new Date().toISOString(),
-          read: false
-        });
-
-        transaction.set(doc(db, 'notifications', nrId), {
-          id: nrId,
-          userId: recipientId,
-          title: "Funds Received",
-          message: `${senderData.fullName} sent you $${amount.toFixed(2)}.`,
-          createdAt: new Date().toISOString(),
-          read: false
-        });
-      });
-    } catch (error: any) {
-      if (error.message && error.message.includes("RESTRICTED_TRANSFER:")) {
-        throw error;
+      } catch (fallbackErr: any) {
+        console.error("Client fallback transfer also failed:", fallbackErr);
+        if (fallbackErr.message && fallbackErr.message.includes("permission")) {
+          throw new Error("Transfers require a Service Account to be configured in settings. Please configure FIREBASE_SERVICE_ACCOUNT_KEY in the Settings menu.");
+        }
+        throw fallbackErr;
       }
-      handleFirestoreError(error, OperationType.WRITE, `transactions/${transactionId}`);
     }
-
-    const receipt: Transaction = {
-      id: debitTxId,
-      userId: senderId,
-      type: 'local_transfer',
-      amount,
-      status: 'approved',
-      recipientName: matchedRecipient.fullName,
-      recipientAccount: recipientAccountNumber,
-      notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
-      createdAt: new Date().toISOString()
-    };
-
-    return receipt;
   }
 
   public async executeIntlTransfer(userId: string, method: string, details: string, amount: number, notes: string, pin: string): Promise<Transaction> {
     const userDocRef = doc(db, 'users', userId);
     const transactionId = "tx_intl_" + Math.random().toString(36).substring(2, 10);
+
+    const settings = this.getSettings();
+    const minAmt = settings.minIntlTransfer ?? 100;
+    const fee = settings.intlTransferFee ?? 25;
+
     const newTx: Transaction = {
       id: transactionId,
       userId,
       type: 'intl_transfer',
       amount,
+      fee,
       status: 'pending',
       recipientName: details,
       intlMethod: method,
       notes,
       createdAt: new Date().toISOString()
     };
-
-    const settings = this.getSettings();
-    const minAmt = settings.minIntlTransfer ?? 100;
-    const fee = settings.intlTransferFee ?? 25;
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -438,6 +597,8 @@ class DBService {
         
         const finalTx = {
           ...newTx,
+          senderName: user.fullName,
+          senderImage: user.profileImage || "",
           notes: fee > 0 ? `${notes} (Fee: $${fee.toFixed(2)})` : notes
         };
         transaction.set(doc(db, 'transactions', transactionId), finalTx);
@@ -558,8 +719,11 @@ class DBService {
             if (!userSnap.exists()) throw new Error("User record missing.");
             const userData = userSnap.data() as UserProfile;
 
+            const refundFee = tx.fee ?? 0;
+            const refundTotal = tx.amount + refundFee;
+
             transaction.update(txDocRef, { status: 'rejected' });
-            transaction.update(userDocRef, { balance: userData.balance + tx.amount });
+            transaction.update(userDocRef, { balance: userData.balance + refundTotal });
           });
 
           await this.addNotification(tx.userId, "Transfer Failed", `Your transfer of $${tx.amount.toFixed(2)} failed. Money has been returned to your account.`);

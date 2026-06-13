@@ -73,7 +73,7 @@ export default function LiveSupportWidget({ userId, userName }: LiveSupportWidge
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 font-sans">
+    <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 font-sans">
       {/* Closed Button Widget */}
       {!isOpen && (
         <button
@@ -94,7 +94,7 @@ export default function LiveSupportWidget({ userId, userName }: LiveSupportWidge
 
       {/* Chat Window Panel */}
       {isOpen && (
-        <div className="w-[360px] h-[480px] bg-slate-900 border border-slate-800 rounded-2xl shadow-[0_16px_36px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-fade-in-up">
+        <div className="w-[calc(100vw-2rem)] sm:w-[360px] h-[380px] sm:h-[480px] bg-slate-900 border border-slate-800 rounded-2xl shadow-[0_16px_36px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-fade-in-up">
           {/* Header */}
           <div className="p-4 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center space-x-3">

@@ -17,6 +17,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState("Securing gateway to Swift Bank online portal...");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
   // Hidden admin login locks
   const [adminEmail, setAdminEmail] = useState("");
@@ -28,43 +29,63 @@ export default function App() {
     setIsLoading(true);
     setLoadingMsg("Syncing encrypted digital vault records...");
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
+      try {
+        if (firebaseUser) {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
             const profileData = userDoc.data() as UserProfile;
             if (profileData.status === 'blocked') {
               await signOut(auth);
               setUser(null);
+              localStorage.removeItem('swift_logged_in');
+              localStorage.removeItem('swift_is_admin');
               setView('login');
               window.history.pushState(null, "", "/login");
               window.dispatchEvent(new PopStateEvent('popstate'));
-              setIsLoading(false);
               return;
             }
             dbService.setupListeners(profileData.userId, profileData.isAdmin);
             setUser(profileData);
+            localStorage.setItem('swift_logged_in', 'true');
             if (profileData.isAdmin) {
+              localStorage.setItem('swift_is_admin', 'true');
               setView('admin');
-              window.history.pushState(null, "", "/admin");
-              window.dispatchEvent(new PopStateEvent('popstate'));
             } else {
+              localStorage.removeItem('swift_is_admin');
               setView('dashboard');
-              const path = window.location.pathname;
-              const validDashboardPaths = ['/dashboard', '/cards', '/profile', '/transfer', '/topup', '/transactions'];
-              if (!validDashboardPaths.includes(path)) {
-                window.history.pushState(null, "", "/dashboard");
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }
             }
+          } else {
+            setUser(null);
+            localStorage.removeItem('swift_logged_in');
+            localStorage.removeItem('swift_is_admin');
           }
-        } catch (err) {
-          console.error("Auth state synchronization failure:", err);
+        } else {
+          const savedEmail = localStorage.getItem('swift_saved_email');
+          const savedPwd = localStorage.getItem('swift_saved_pwd');
+          if (savedEmail && savedPwd) {
+            try {
+              await signInWithEmailAndPassword(auth, savedEmail, savedPwd);
+              return;
+            } catch (autoErr) {
+              console.error("Auto login background re-auth failed:", autoErr);
+              localStorage.removeItem('swift_saved_email');
+              localStorage.removeItem('swift_saved_pwd');
+              setUser(null);
+              localStorage.removeItem('swift_logged_in');
+              localStorage.removeItem('swift_is_admin');
+            }
+          } else {
+            setUser(null);
+            localStorage.removeItem('swift_logged_in');
+            localStorage.removeItem('swift_is_admin');
+          }
         }
-      } else {
-        setUser(null);
+      } catch (err) {
+        console.error("Auth state synchronization failure:", err);
+      } finally {
+        setAuthLoaded(true);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
     return () => unsub();
@@ -72,20 +93,41 @@ export default function App() {
 
   // Parse pathing and coordinates on boot and refresh
   useEffect(() => {
+    if (!authLoaded) return;
+
     const handlePathnameChange = () => {
       const path = window.location.pathname;
+      const isLoggedHint = localStorage.getItem('swift_logged_in') === 'true';
+      const isAdminHint = localStorage.getItem('swift_is_admin') === 'true';
+
       if (path === '/admin' || path === '/admin/login') {
         if (user && user.isAdmin) {
+          setView('admin');
+        } else if (isAdminHint) {
           setView('admin');
         } else {
           setView('admin'); // mount admin credential checkpoint
         }
       } else if (path === '/login') {
-        setView('login');
+        if (user) {
+          setView(user.isAdmin ? 'admin' : 'dashboard');
+          window.history.pushState(null, "", user.isAdmin ? "/admin" : "/dashboard");
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          setView('login');
+        }
       } else if (path === '/register') {
-        setView('register');
+        if (user) {
+          setView(user.isAdmin ? 'admin' : 'dashboard');
+          window.history.pushState(null, "", user.isAdmin ? "/admin" : "/dashboard");
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          setView('register');
+        }
       } else if (['/dashboard', '/cards', '/profile', '/transfer', '/topup', '/transactions'].includes(path)) {
         if (user) {
+          setView('dashboard');
+        } else if (isLoggedHint) {
           setView('dashboard');
         } else {
           window.history.pushState(null, "", "/login");
@@ -106,7 +148,40 @@ export default function App() {
     return () => {
       window.removeEventListener('popstate', handlePathnameChange);
     };
-  }, [user]);
+  }, [authLoaded, user]);
+
+  // Dynamic Favicon sync with settings
+  useEffect(() => {
+    const updateFavicon = (settings: any) => {
+      if (settings && settings.faviconUrl) {
+        let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = settings.faviconUrl;
+      }
+    };
+
+    // Initial load
+    const initialSettings = dbService.getSettings();
+    if (initialSettings) {
+      updateFavicon(initialSettings);
+    }
+
+    const handleSettingsUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        updateFavicon(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('swiftbank_settings_updated', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('swiftbank_settings_updated', handleSettingsUpdate);
+    };
+  }, []);
 
   // Handle active navigation adjustments
   const navigateTo = (nextView: 'landing' | 'login' | 'register' | 'dashboard' | 'admin') => {
@@ -140,6 +215,12 @@ export default function App() {
   // Auth logins success triggers
   const handleAuthSuccess = (authenticatedUser: UserProfile) => {
     setUser(authenticatedUser);
+    localStorage.setItem('swift_logged_in', 'true');
+    if (authenticatedUser.isAdmin) {
+      localStorage.setItem('swift_is_admin', 'true');
+    } else {
+      localStorage.removeItem('swift_is_admin');
+    }
     setIsLoading(true);
     setLoadingMsg(`Welcome back, ${authenticatedUser.fullName}. Unlocking visual bank metrics...`);
     
@@ -170,6 +251,10 @@ export default function App() {
     dbService.clearListeners();
     await signOut(auth);
     setUser(null);
+    localStorage.removeItem('swift_logged_in');
+    localStorage.removeItem('swift_is_admin');
+    localStorage.removeItem('swift_saved_email');
+    localStorage.removeItem('swift_saved_pwd');
     setAdminEmail("");
     setAdminPassword("");
     
@@ -220,6 +305,9 @@ export default function App() {
       if (!superAdmin.isAdmin) {
         throw new Error("This account is not designated as administrative role.");
       }
+
+      localStorage.setItem('swift_saved_email', adminEmail);
+      localStorage.setItem('swift_saved_pwd', adminPassword);
 
       dbService.setupListeners(superAdmin.userId, superAdmin.isAdmin);
       setUser(superAdmin);

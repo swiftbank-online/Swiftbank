@@ -35,7 +35,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings'>('overview');
+  const [activeTab, setActiveTab ] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings' | 'security'>('overview');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Live state from dbService
@@ -86,6 +86,14 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   const [btcIsUploading, setBtcIsUploading] = useState(false);
   const [usdtIsUploading, setUsdtIsUploading] = useState(false);
   const [faviconIsUploading, setFaviconIsUploading] = useState(false);
+
+  // Security editing state parameters
+  const [selectedSecurityUser, setSelectedSecurityUser] = useState<UserProfile | null>(null);
+  const [securityRestrictTransfers, setSecurityRestrictTransfers] = useState(false);
+  const [securityTxLimit, setSecurityTxLimit] = useState(2);
+  const [securityWarningTitle, setSecurityWarningTitle] = useState("Transfer Security Alert");
+  const [securityWarningMessage, setSecurityWarningMessage] = useState("Your transaction frequency has initiated our advanced review procedures. To protect assets, please verify your credentials with our support branch.");
+  const [securitySuccess, setSecuritySuccess] = useState(false);
 
   useEffect(() => {
     setBankName(landingSettings.bankName || "");
@@ -347,6 +355,38 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     }
   };
 
+  // Handle initializing a user's security config in state
+  const startSecurityEditing = (user: UserProfile) => {
+    setSelectedSecurityUser(user);
+    setSecurityRestrictTransfers(!!user.securityRestrictTransfers);
+    setSecurityTxLimit(user.securityTxLimit ?? 2);
+    setSecurityWarningTitle(user.securityWarningTitle || "Transfer Security Alert");
+    setSecurityWarningMessage(user.securityWarningMessage || "Your transaction frequency has initiated our advanced review procedures. To protect assets, please verify your credentials with our support branch.");
+  };
+
+  // Save modified user security configurations
+  const handleSaveSecuritySettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSecurityUser) return;
+
+    try {
+      await dbService.updateUserProfile(selectedSecurityUser.userId, {
+        securityRestrictTransfers,
+        securityTxLimit,
+        securityWarningTitle,
+        securityWarningMessage
+      });
+      setSecuritySuccess(true);
+      setTimeout(() => {
+        setSecuritySuccess(false);
+        setSelectedSecurityUser(null);
+      }, 1500);
+      syncAdminState();
+    } catch (err) {
+      console.error("Failed to save security configuration settings:", err);
+    }
+  };
+
   // Admin reply Chat action
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,11 +440,12 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
             <nav className="p-4 space-y-1">
               {[
                 { id: 'overview', icon: BarChart, label: 'Overview' },
-                { id: 'deposits', icon: ArrowDownLeft, label: 'Deposits', badge: stats.pendingDepositsCount },
-                { id: 'transfers', icon: ArrowUpRight, label: 'Transfers', badge: stats.pendingTransfersCount },
                 { id: 'users', icon: Users, label: 'Users' },
+                { id: 'transfers', icon: ArrowUpRight, label: 'Transfers', badge: stats.pendingTransfersCount },
+                { id: 'deposits', icon: ArrowDownLeft, label: 'Deposits', badge: stats.pendingDepositsCount },
                 { id: 'cards', icon: CreditCard, label: 'Cards' },
-                { id: 'chat', icon: MessageSquare, label: 'Chat Support' },
+                { id: 'chat', icon: MessageSquare, label: 'Messages' },
+                { id: 'security', icon: FolderLock, label: 'Security' },
                 { id: 'landing-page', icon: Layout, label: 'Landing Page' },
                 { id: 'settings', icon: Settings, label: 'Settings' }
               ].map((item) => {
@@ -1273,6 +1314,178 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SECURITY POLICY DECK */}
+          {activeTab === 'security' && (
+            <div className="space-y-6 animate-fade-in text-left">
+              <div>
+                <h2 className="text-xl font-bold text-white font-display">Client Security Mainframe</h2>
+                <p className="text-xs text-slate-400">Manage transaction limits, toggle systemic freezes, and configure customized alert notices for individual customer portfolios.</p>
+              </div>
+
+              {securitySuccess && (
+                <div className="p-3 bg-emerald-955/40 border border-emerald-900/30 text-emerald-400 rounded-xl text-xs font-semibold animate-pulse">
+                  System updated successfully: security directives pushed to production.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* USER TABLE GRID */}
+                <div className="lg:col-span-7 bg-slate-900/40 border border-slate-900/80 p-5 rounded-2xl space-y-4">
+                  <div className="flex justify-between items-center border-b border-slate-900 pb-3">
+                    <span className="text-xs uppercase text-slate-400 font-bold tracking-widest font-mono">Portfolio Holders Registry</span>
+                    <span className="bg-slate-950 px-2.5 py-0.5 rounded text-[10px] font-mono text-slate-500 font-bold">{allUsers.filter(u => !u.isAdmin).length} Accounts</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs divide-y divide-slate-900/40">
+                      <thead>
+                        <tr className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+                          <th className="py-2.5 font-bold">Profile</th>
+                          <th className="py-2.5 font-bold">Details</th>
+                          <th className="py-2.5 font-bold">Account</th>
+                          <th className="py-2.5 font-bold">Status</th>
+                          <th className="py-2.5 font-bold text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900/30 font-medium">
+                        {allUsers.filter(u => !u.isAdmin).map((u) => (
+                          <tr key={u.userId} className="hover:bg-slate-900/10">
+                            <td className="py-3">
+                              <img 
+                                src={u.profileImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120"} 
+                                alt={u.fullName}
+                                className="w-7 h-7 rounded-full border border-slate-800 object-cover"
+                              />
+                            </td>
+                            <td className="py-3">
+                              <p className="font-bold text-white truncate max-w-[120px] uppercase">{u.fullName}</p>
+                              <p className="text-[10px] text-slate-500 truncate max-w-[120px]">{u.email}</p>
+                            </td>
+                            <td className="py-3 text-[10px] font-mono text-slate-300 font-bold">
+                              {u.accountNumber || "N/A"}
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                u.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'
+                              }`}>
+                                {u.status}
+                              </span>
+                            </td>
+                            <td className="py-3 text-center">
+                              <button 
+                                onClick={() => startSecurityEditing(u)}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all active:scale-95 cursor-pointer ${
+                                  selectedSecurityUser?.userId === u.userId 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-850'
+                                }`}
+                              >
+                                {selectedSecurityUser?.userId === u.userId ? 'Modifying' : 'Modify'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* EDITING FORM FOR SELECTED USER */}
+                <div className="lg:col-span-5 bg-slate-900/40 border border-slate-900 p-6 rounded-2xl">
+                  {selectedSecurityUser ? (
+                    <form onSubmit={handleSaveSecuritySettings} className="space-y-4">
+                      <div className="border-b border-slate-900 pb-3 flex justify-between items-center">
+                        <div>
+                          <p className="text-[10px] uppercase text-blue-500 font-bold tracking-widest font-mono">Modifying Security</p>
+                          <h4 className="text-xs font-extrabold text-white uppercase">{selectedSecurityUser.fullName}</h4>
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={() => setSelectedSecurityUser(null)}
+                          className="p-1 hover:bg-slate-850 rounded text-slate-500 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Restrict Transfers ON/OFF */}
+                        <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-900 rounded-xl">
+                          <div className="space-y-0.5 text-left">
+                            <label className="text-[10px] text-slate-300 font-bold uppercase tracking-wider block">Restrict Transfers</label>
+                            <span className="text-[9px] text-slate-500 font-medium font-semibold">Freeze all transaction capabilities</span>
+                          </div>
+                          <input 
+                            type="checkbox"
+                            checked={securityRestrictTransfers}
+                            onChange={(e) => setSecurityRestrictTransfers(e.target.checked)}
+                            className="accent-red-650 h-4 w-4 bg-slate-900 rounded border-slate-850 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Trigger Transfer Number */}
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">Trigger Transfer Threshold Index</label>
+                          <input 
+                            type="number"
+                            required
+                            min={1}
+                            value={securityTxLimit}
+                            onChange={(e) => setSecurityTxLimit(Number(e.target.value))}
+                            placeholder="e.g. 2"
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                          />
+                          <p className="text-[9px] text-slate-500 mt-1 leading-relaxed font-semibold">Automatically shows alert when customer attempts Nth transfer (e.g. 2 means they can do 1 but get blocked on their 2nd attempt).</p>
+                        </div>
+
+                        {/* Security Notice Title */}
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">Security Notice Title</label>
+                          <input 
+                            type="text"
+                            required
+                            value={securityWarningTitle}
+                            onChange={(e) => setSecurityWarningTitle(e.target.value)}
+                            placeholder="Headline displayed"
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                          />
+                        </div>
+
+                        {/* Security Notice Message */}
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">Security Notice Message</label>
+                          <textarea 
+                            required
+                            rows={4}
+                            value={securityWarningMessage}
+                            onChange={(e) => setSecurityWarningMessage(e.target.value)}
+                            placeholder="Explaining the procedural check"
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none font-semibold leading-relaxed"
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        type="submit"
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs active:scale-95 transition-all shadow-md hover:shadow-blue-600/10 cursor-pointer"
+                      >
+                        Push Security Updates
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="py-12 flex flex-col items-center justify-center text-slate-500 space-y-2">
+                      <FolderLock className="w-10 h-10 stroke-1 text-slate-700 animate-pulse" />
+                      <p className="text-[10px] uppercase font-mono tracking-widest font-bold text-slate-650">Select Portfolio Holder</p>
+                      <p className="text-[9.5px] text-slate-650 max-w-xs text-center font-semibold leading-relaxed">Select any customer from the registry deck to modify transfer thresholds, systemic locks, and warnings.</p>
+                    </div>
+                  )}
+                </div>
+
               </div>
             </div>
           )}

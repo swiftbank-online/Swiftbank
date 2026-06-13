@@ -88,6 +88,9 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
   const [localPin, setLocalPin] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const [localSuccess, setLocalSuccess] = useState<string | null>(null);
+  const [isLocalConfirming, setIsLocalConfirming] = useState(false);
+  const [isLocalPending, setIsLocalPending] = useState(false);
+  const [receiptTransaction, setReceiptTransaction] = useState<Transaction | null>(null);
 
   // International Transfer Fields
   const [intlMethod, setIntlMethod] = useState("Wire Transfer");
@@ -97,6 +100,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
   const [intlPin, setIntlPin] = useState("");
   const [intlError, setIntlError] = useState<string | null>(null);
   const [intlSuccess, setIntlSuccess] = useState<string | null>(null);
+  const [isIntlConfirming, setIsIntlConfirming] = useState(false);
+  const [isIntlPending, setIsIntlPending] = useState(false);
 
   // Card Application Fields
   const [cardBrand, setCardBrand] = useState<'Visa' | 'Mastercard' | 'American Express'>('Visa');
@@ -224,17 +229,24 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
   // Auto recipient lookup for local transfers
   useEffect(() => {
+    let active = true;
     if (localAccountNum.length === 10) {
-      const match = dbService.getUserByAccountNumber(localAccountNum);
-      if (match) {
-        setLocalRecipientResolved(match);
-        setLocalRecipientName(match.fullName);
+      const fetchMatch = async () => {
         setLocalError(null);
-      } else {
-        setLocalRecipientResolved(null);
-        setLocalRecipientName("");
-        setLocalError("Account number not recognized or inactive.");
-      }
+        setLocalRecipientName("Searching Secure Gateway...");
+        const match = await dbService.lookupUserByAccountNumber(localAccountNum);
+        if (!active) return;
+        if (match) {
+          setLocalRecipientResolved(match);
+          setLocalRecipientName(match.fullName);
+          setLocalError(null);
+        } else {
+          setLocalRecipientResolved(null);
+          setLocalRecipientName("");
+          setLocalError("Account number not recognized or inactive.");
+        }
+      };
+      fetchMatch();
     } else {
       setLocalRecipientResolved(null);
       setLocalRecipientName("");
@@ -244,6 +256,9 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
         setLocalError(null);
       }
     }
+    return () => {
+      active = false;
+    };
   }, [localAccountNum]);
 
   // Handle Quick Top up
@@ -298,8 +313,20 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
       return;
     }
 
+    if (localPin !== profile.pin) {
+      setLocalError("Incorrect transaction authorization PIN security code.");
+      return;
+    }
+
+    setIsLocalConfirming(true);
+  };
+
+  const handleLocalTransferConfirm = async () => {
+    setIsLocalPending(true);
+    setLocalError(null);
     try {
-      dbService.executeLocalTransfer(
+      const amount = parseFloat(localAmount);
+      const tx = await dbService.executeLocalTransfer(
         profile.userId,
         localAccountNum,
         amount,
@@ -309,13 +336,17 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
       // success!
       setLocalSuccess(`Successfully transferred $${amount.toFixed(2)} to ${localRecipientName} instantly.`);
+      setReceiptTransaction(tx);
       setLocalAccountNum("");
       setLocalAmount("");
       setLocalNote("");
       setLocalPin("");
+      setIsLocalConfirming(false);
       syncDashboardData();
     } catch (err: any) {
       setLocalError(err.message || "Transfer aborted.");
+    } finally {
+      setIsLocalPending(false);
     }
   };
 
@@ -346,8 +377,20 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
       return;
     }
 
+    if (intlPin !== profile.pin) {
+      setIntlError("Incorrect transaction authorization PIN security code.");
+      return;
+    }
+
+    setIsIntlConfirming(true);
+  };
+
+  const handleIntlTransferConfirm = async () => {
+    setIsIntlPending(true);
+    setIntlError(null);
     try {
-      dbService.executeIntlTransfer(
+      const amount = parseFloat(intlAmount);
+      const tx = await dbService.executeIntlTransfer(
         profile.userId,
         intlMethod,
         intlDetails,
@@ -356,14 +399,18 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
         intlPin
       );
 
-      setIntlSuccess(`Outbound wire request of $${amount.toFixed(2)} logged. Funds locked pending administrative approval.`);
+      setIntlSuccess(`Transfer Submitted of $${amount.toFixed(2)}. Outbound wire pending administrative credentials confirmation approval.`);
+      setReceiptTransaction(tx);
       setIntlDetails("");
       setIntlAmount("");
       setIntlNote("");
       setIntlPin("");
+      setIsIntlConfirming(false);
       syncDashboardData();
     } catch (err: any) {
       setIntlError(err.message || "Wire requested rejected.");
+    } finally {
+      setIsIntlPending(false);
     }
   };
 
@@ -464,18 +511,27 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
       const data = await resp.json();
       if (data.url) {
         setAvatarUrl(data.url);
+        await dbService.updateUserProfile(profile.userId, {
+          profileImage: data.url
+        });
         setUploadProgress("Success!");
         setTimeout(() => setUploadProgress(""), 2200);
+        syncDashboardData();
       }
     } catch (err: any) {
       console.warn("Express backend upload failed, falling back to local base64 render:", err.message);
       try {
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
           if (reader.result) {
-            setAvatarUrl(reader.result as string);
+            const b64 = reader.result as string;
+            setAvatarUrl(b64);
+            await dbService.updateUserProfile(profile.userId, {
+              profileImage: b64
+            });
             setUploadProgress("Success!");
             setTimeout(() => setUploadProgress(""), 2200);
+            syncDashboardData();
           }
         };
         reader.onerror = () => {
@@ -960,15 +1016,25 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                         <p className="text-[9px] text-slate-500 font-mono">{new Date(tx.createdAt).toLocaleString()}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-xs font-bold font-mono ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
-                      </p>
-                      <p className={`text-[9px] uppercase font-bold ${
-                        tx.status === 'approved' ? 'text-green-400' : tx.status === 'rejected' ? 'text-red-400' : 'text-amber-500 animate-pulse'
-                      }`}>
-                        {tx.status === 'approved' ? 'Completed' : tx.status === 'rejected' ? 'Declined' : 'Processing'}
-                      </p>
+                    <div className="flex items-center space-x-3 text-right">
+                      <div className="text-right">
+                        <p className={`text-xs font-bold font-mono ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
+                          {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                        </p>
+                        <p className={`text-[9px] uppercase font-bold ${
+                          tx.status === 'approved' ? 'text-green-400' : tx.status === 'rejected' ? 'text-red-400' : 'text-amber-500 animate-pulse'
+                        }`}>
+                          {tx.status === 'approved' ? 'Completed' : tx.status === 'rejected' ? 'Declined' : 'Processing'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReceiptTransaction(tx)}
+                        title="View Official Remittance Receipt"
+                        className="p-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-blue-600 border border-slate-850 hover:border-blue-500 hover:text-white text-[9px] text-slate-400 transition-all font-bold cursor-pointer"
+                      >
+                        Receipt
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1029,6 +1095,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     <th scope="col" className="px-6 py-4">Recipient Info</th>
                     <th scope="col" className="px-6 py-4">Status</th>
                     <th scope="col" className="px-6 py-4 text-right">Amount</th>
+                    <th scope="col" className="px-6 py-4 text-center">Receipt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900">
@@ -1056,11 +1123,23 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                       <td className={`px-6 py-4 text-right font-mono font-bold text-sm ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
                         {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
                       </td>
+                      <td className="px-6 py-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setReceiptTransaction(tx)}
+                          className="px-3 py-1 bg-slate-950 hover:bg-blue-600 border border-slate-850 hover:border-blue-500 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white transition-all cursor-pointer flex items-center space-x-1 mx-auto font-sans"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span>Receipt</span>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {filteredTxs.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="text-center py-10 text-slate-500">No transactions match your search criteria.</td>
+                      <td colSpan={6} className="text-center py-10 text-slate-500">No transactions match your search criteria.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1431,8 +1510,53 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
             </div>
 
-            {/* Sub-tabs Selector */}
-            <div className="flex space-x-2 border-b border-slate-900 pb-1.5">
+            {(() => {
+              const previousTransfersCount = transactions.filter(t => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
+              const isTransferRestricted = !!profile.securityRestrictTransfers || 
+                (profile.securityTxLimit !== undefined && previousTransfersCount >= profile.securityTxLimit);
+
+              if (isTransferRestricted) {
+                return (
+                  <div className="p-6 sm:p-8 bg-slate-900/40 border border-red-900/25 rounded-3xl space-y-6 text-left max-w-2xl mx-auto my-6 animate-fade-in shadow-2xl">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 text-red-505 rounded-xl flex items-center justify-center flex-shrink-0 animate-pulse">
+                        <AlertCircle className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-md sm:text-lg font-bold text-red-400 font-display">{profile.securityWarningTitle || "Security Verification Required"}</h3>
+                        <p className="text-[10px] uppercase font-mono tracking-wider text-red-500/80 font-semibold">Procedural Review Alert Gateway</p>
+                      </div>
+                    </div>
+
+                    <p className="text-slate-300 font-semibold text-xs bg-slate-950 p-4.5 sm:p-5 rounded-2xl border border-slate-900 leading-relaxed">
+                      {profile.securityWarningMessage || "To protect customer assets, standard verification protocols have initiated a temporary hold on outbound transfers. To lift this review and restore immediate outbound capacity, verify security details on our secure live support desk."}
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                      <button
+                        onClick={() => setActiveTab('profile')}
+                        className="w-full sm:flex-1 py-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-xs font-bold transition-all text-slate-300 cursor-pointer text-center"
+                      >
+                        Manage Profile Details
+                      </button>
+                      <button
+                        onClick={() => {
+                          const btn = document.getElementById('toggle-chat-btn');
+                          if (btn) btn.click();
+                        }}
+                        className="w-full sm:flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/10 active:scale-95 cursor-pointer text-center"
+                      >
+                        Launch Secure Live Support Desk
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  {/* Sub-tabs Selector */}
+                  <div className="flex space-x-2 border-b border-slate-900 pb-1.5">
               <button
                 type="button"
                 onClick={() => setTransferSubTab('local')}
@@ -1481,87 +1605,189 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     </div>
                   )}
 
-                  <form onSubmit={handleLocalTransferSubmit} className="space-y-4">
-                    {/* Beneficiary Account Number */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Recipient Account Number (10 Digits)</label>
-                      <input
-                        type="text"
-                        maxLength={10}
-                        required
-                        placeholder="e.g. 0123456789"
-                        value={localAccountNum}
-                        onChange={(e) => setLocalAccountNum(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
-                      />
-                      {localRecipientResolved ? (
-                        <div className="mt-2 flex items-center space-x-1.5 pl-1 text-[11px] text-emerald-400 font-bold">
-                          <Check className="w-3.5 h-3.5 animate-bounce" />
-                          <span>Beneficiary Resolved: {localRecipientName}</span>
-                        </div>
-                      ) : localAccountNum.length === 10 && (
-                        <div className="mt-2 text-[11px] text-red-400 font-bold pl-1">
-                          Beneficiary not resolved or inactive account number.
-                        </div>
-                      )}
-                    </div>
+                  {isLocalConfirming ? (
+                    <div className="space-y-5 text-left">
+                      <div className="text-center pb-2">
+                        <h4 className="text-sm font-bold text-white mb-1">Confirm Transaction Details</h4>
+                        <p className="text-[11px] text-slate-500 uppercase tracking-wider font-mono">Review transfer before final routing</p>
+                      </div>
 
-                    {/* Amount to Transfer */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Transfer Amount (USD)</label>
-                      <div className="relative flex items-center">
-                        <span className="absolute left-4 text-blue-500 font-bold">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          required
-                          placeholder="0.00"
-                          value={localAmount}
-                          onChange={(e) => setLocalAmount(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
+                      <div className="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex items-center space-x-3.5">
+                        <img 
+                          src={localRecipientResolved?.profileImage || DEFAULT_AVATAR} 
+                          alt="Recipient Logo"
+                          className="w-12 h-12 rounded-full border border-slate-800 object-cover"
+                          referrerPolicy="no-referrer"
                         />
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Beneficiary Resolved</p>
+                          <p className="text-sm font-bold text-white font-display leading-tight">{localRecipientName}</p>
+                          <p className="text-xs text-slate-450 font-semibold font-mono">{localAccountNum}</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-slate-950/40 border border-slate-900 rounded-2xl space-y-3 font-semibold text-xs text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Amount Sent:</span>
+                          <span className="text-white">${parseFloat(localAmount).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Processing Fee:</span>
+                          <span className="text-white">${(dbService.getSettings().localTransferFee ?? 0).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900 pt-2.5 flex justify-between text-sm font-bold text-white">
+                          <span>Total Deduction:</span>
+                          <span className="text-blue-500">${(parseFloat(localAmount) + (dbService.getSettings().localTransferFee ?? 0)).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900/60 pt-2 flex justify-between">
+                          <span>Amount Recipient Receives:</span>
+                          <span className="text-emerald-400 font-bold">${parseFloat(localAmount).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900 pt-2 text-center text-[10px] text-slate-500 font-mono">
+                          Notes: {localNote || "P2P Swift Settlement"}
+                        </div>
+                      </div>
+
+                      {localError && (
+                        <p className="text-xs text-red-400 text-center uppercase tracking-wider mt-2">{localError}</p>
+                      )}
+
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsLocalConfirming(false)}
+                          disabled={isLocalPending}
+                          className="flex-1 py-3 bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold rounded-xl text-xs active:scale-95 transition-all outline-none border border-slate-850 cursor-pointer text-center"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleLocalTransferConfirm}
+                          disabled={isLocalPending}
+                          className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-1.5"
+                        >
+                          {isLocalPending ? "Sending..." : "Confirm & Send"}
+                        </button>
                       </div>
                     </div>
+                  ) : (
+                    <form onSubmit={handleLocalTransferSubmit} className="space-y-4">
+                      {/* Beneficiary Account Number */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Recipient Account Number (10 Digits)</label>
+                        <input
+                          type="text"
+                          maxLength={10}
+                          required
+                          placeholder="e.g. 0123456789"
+                          value={localAccountNum}
+                          onChange={(e) => setLocalAccountNum(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                        />
+                        {localRecipientResolved ? (
+                          <div className="mt-2.5 p-3.5 bg-slate-950 border border-slate-850 rounded-2xl flex items-center space-x-3.5">
+                            <img 
+                              src={localRecipientResolved.profileImage || DEFAULT_AVATAR} 
+                              alt="Recipient Avatar" 
+                              referrerPolicy="no-referrer"
+                              className="w-10 h-10 rounded-full border border-slate-800 object-cover"
+                            />
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-semibold uppercase leading-none mb-1">Recipient Resolved</p>
+                              <p className="text-sm font-bold text-white font-display">{localRecipientResolved.fullName}</p>
+                            </div>
+                          </div>
+                        ) : localAccountNum.length === 10 && localRecipientName === "Searching Secure Gateway..." ? (
+                          <div className="mt-2 flex items-center space-x-1.5 pl-1 text-[11px] text-blue-400 font-semibold animate-pulse">
+                            <span>Searching secure gateway...</span>
+                          </div>
+                        ) : localAccountNum.length === 10 && (
+                          <div className="mt-2 text-[11px] text-red-400 font-bold pl-1">
+                            Beneficiary not resolved or inactive account number.
+                          </div>
+                        )}
+                      </div>
 
-                    {/* Transaction Note / Memo */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Transfer Note / Memo (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Settlement of invoices, family support..."
-                        value={localNote}
-                        onChange={(e) => setLocalNote(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
-                      />
-                    </div>
+                      {/* Amount to Transfer */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Transfer Amount (USD)</label>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-4 text-blue-500 font-bold">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            placeholder="0.00"
+                            value={localAmount}
+                            onChange={(e) => setLocalAmount(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
+                          />
+                        </div>
+                      </div>
 
-                    {/* Secure Transaction 4-digit PIN */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Secure Transaction PIN (4 Digits)</label>
-                      <input
-                        type="password"
-                        maxLength={4}
-                        required
-                        placeholder="••••"
-                        value={localPin}
-                        onChange={(e) => setLocalPin(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-center font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold tracking-widest"
-                      />
-                    </div>
+                      {/* Recipient breakdown values */}
+                      {localRecipientResolved && localAmount && parseFloat(localAmount) > 0 && (
+                        <div className="p-4 bg-slate-950/60 border border-slate-850/60 rounded-2xl text-xs space-y-2.5 font-semibold text-slate-400">
+                          <div className="flex justify-between">
+                            <span>Transfer Net Amount:</span>
+                            <span className="text-white">${parseFloat(localAmount).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Processing Fee:</span>
+                            <span className="text-white">${(dbService.getSettings().localTransferFee ?? 0).toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-slate-850/80 pt-2 flex justify-between text-sm font-bold text-white leading-none">
+                            <span>Total Deduction:</span>
+                            <span className="text-blue-500">${(parseFloat(localAmount) + (dbService.getSettings().localTransferFee ?? 0)).toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-slate-850/40 pt-2 flex justify-between">
+                            <span>Recipient Receives:</span>
+                            <span className="text-emerald-400 font-bold">${parseFloat(localAmount).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
 
-                    {localError && (
-                      <p className="text-[11px] text-red-400 font-semibold pl-1 uppercase tracking-wider">{localError}</p>
-                    )}
+                      {/* Transaction Note / Memo */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Transfer Note / Memo (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Settlement of invoices..."
+                          value={localNote}
+                          onChange={(e) => setLocalNote(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                        />
+                      </div>
 
-                    <button
-                      type="submit"
-                      disabled={!localRecipientResolved || !localAmount || parseFloat(localAmount) <= 0 || localPin.length !== 4}
-                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-2 font-display"
-                    >
-                      <ArrowRightLeft className="w-4 h-4" />
-                      <span>Execute Instant Bank Transfer</span>
-                    </button>
-                  </form>
+                      {/* Secure Transaction 4-digit PIN */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Secure Transaction PIN (4 Digits)</label>
+                        <input
+                          type="password"
+                          maxLength={4}
+                          required
+                          placeholder="••••"
+                          value={localPin}
+                          onChange={(e) => setLocalPin(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-center font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold tracking-widest"
+                        />
+                      </div>
+
+                      {localError && (
+                        <p className="text-[11px] text-red-400 font-semibold pl-1 uppercase tracking-wider">{localError}</p>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={!localRecipientResolved || !localAmount || parseFloat(localAmount) <= 0 || localPin.length !== 4}
+                        className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-2 font-display"
+                      >
+                        <ArrowRightLeft className="w-4 h-4" />
+                        <span>Preview & Verify Transfer</span>
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1587,95 +1813,185 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     </div>
                   )}
 
-                  <form onSubmit={handleIntlTransferSubmit} className="space-y-4">
-                    {/* Wire protocol engine */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Standard Settlement Protocol</label>
-                      <select
-                        value={intlMethod}
-                        onChange={(e) => setIntlMethod(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
-                      >
-                        <option>Wire Transfer</option>
-                        <option>SWIFT Network</option>
-                        <option>SEPA Gateway</option>
-                        <option>FedWire Reserve</option>
-                        <option>Allied Crypto Settlement (USDT/BTC)</option>
-                      </select>
-                    </div>
+                  {isIntlConfirming ? (
+                    <div className="space-y-5 text-left">
+                      <div className="text-center pb-2">
+                        <h4 className="text-sm font-bold text-white mb-1">Confirm Outbound Wire Settlement</h4>
+                        <p className="text-[11px] text-slate-500 uppercase tracking-wider font-mono">Review clearing specifications carefully</p>
+                      </div>
 
-                    {/* Beneficiary Details */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Beneficiary Complete Details</label>
-                      <textarea
-                        required
-                        rows={3}
-                        placeholder="Include Legal Name, Bank Name, Routing/ABA/BIC, and Beneficiary IBAN/Account details..."
-                        value={intlDetails}
-                        onChange={(e) => setIntlDetails(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
-                      />
-                    </div>
+                      <div className="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex items-center space-x-3.5">
+                        <div className="w-12 h-12 rounded-full border border-slate-800 bg-blue-950/40 text-blue-400 flex items-center justify-center font-display text-lg font-bold">
+                          🌐
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Clearing Protocol</p>
+                          <p className="text-sm font-bold text-white font-display leading-tight">{intlMethod}</p>
+                          <p className="text-xs text-slate-450 font-semibold max-w-xs truncate font-mono">{intlDetails}</p>
+                        </div>
+                      </div>
 
-                    {/* Amount */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Wire Amount (USD)</label>
-                      <div className="relative flex items-center">
-                        <span className="absolute left-4 text-blue-500 font-bold">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          required
-                          placeholder="0.00"
-                          value={intlAmount}
-                          onChange={(e) => setIntlAmount(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
-                        />
+                      <div className="p-4 bg-slate-950/40 border border-slate-900 rounded-2xl space-y-3 font-semibold text-xs text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Wire Base Amount:</span>
+                          <span className="text-white">${parseFloat(intlAmount).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Standard Processing Fee:</span>
+                          <span className="text-white">${(dbService.getSettings().intlTransferFee ?? 0).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900 pt-2.5 flex justify-between text-sm font-bold text-white">
+                          <span>Total Deduction:</span>
+                          <span className="text-blue-500">${(parseFloat(intlAmount) + (dbService.getSettings().intlTransferFee ?? 0)).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900/60 pt-2 flex justify-between">
+                          <span>Net Received Amount:</span>
+                          <span className="text-emerald-400 font-bold">${parseFloat(intlAmount).toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-slate-900 pt-2 text-center text-[10px] text-slate-500 font-mono">
+                          Notes: {intlNote || "International Clearing Outbound"}
+                        </div>
+                      </div>
+
+                      {intlError && (
+                        <p className="text-xs text-red-400 text-center uppercase tracking-wider mt-2">{intlError}</p>
+                      )}
+
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsIntlConfirming(false)}
+                          disabled={isIntlPending}
+                          className="flex-1 py-3 bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold rounded-xl text-xs active:scale-95 transition-all outline-none border border-slate-850 cursor-pointer text-center"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleIntlTransferConfirm}
+                          disabled={isIntlPending}
+                          className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-1.5"
+                        >
+                          {isIntlPending ? "Publishing..." : "Confirm & Send Wire"}
+                        </button>
                       </div>
                     </div>
+                  ) : (
+                    <form onSubmit={handleIntlTransferSubmit} className="space-y-4">
+                      {/* Wire protocol engine */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Standard Settlement Protocol</label>
+                        <select
+                          value={intlMethod}
+                          onChange={(e) => setIntlMethod(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                        >
+                          <option>Wire Transfer</option>
+                          <option>SWIFT Network</option>
+                          <option>SEPA Gateway</option>
+                          <option>FedWire Reserve</option>
+                          <option>Allied Crypto Settlement (USDT/BTC)</option>
+                        </select>
+                      </div>
 
-                    {/* Note / Memo */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Memo Notes (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Business purchase, invoice contract number..."
-                        value={intlNote}
-                        onChange={(e) => setIntlNote(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
-                      />
-                    </div>
+                      {/* Beneficiary Details */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Beneficiary Complete Details</label>
+                        <textarea
+                          required
+                          rows={3}
+                          placeholder="Include Legal Name, Bank Name, Routing/ABA/BIC, and Beneficiary IBAN/Account details..."
+                          value={intlDetails}
+                          onChange={(e) => setIntlDetails(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                        />
+                      </div>
 
-                    {/* Secure Transaction 4-digit PIN */}
-                    <div>
-                      <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Secure Transaction PIN (4 Digits)</label>
-                      <input
-                        type="password"
-                        maxLength={4}
-                        required
-                        placeholder="••••"
-                        value={intlPin}
-                        onChange={(e) => setIntlPin(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-center font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold tracking-widest"
-                      />
-                    </div>
+                      {/* Amount */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Wire Amount (USD)</label>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-4 text-blue-500 font-bold">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            placeholder="0.00"
+                            value={intlAmount}
+                            onChange={(e) => setIntlAmount(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
+                          />
+                        </div>
+                      </div>
 
-                    {intlError && (
-                      <p className="text-[11px] text-red-400 font-semibold pl-1 uppercase tracking-wider">{intlError}</p>
-                    )}
+                      {/* Wire breakdown values */}
+                      {intlAmount && parseFloat(intlAmount) > 0 && (
+                        <div className="p-4 bg-slate-950/60 border border-slate-850/60 rounded-2xl text-xs space-y-2.5 font-semibold text-slate-400">
+                          <div className="flex justify-between">
+                            <span>Wire Net Amount:</span>
+                            <span className="text-white">${parseFloat(intlAmount).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Standard Processing Fee:</span>
+                            <span className="text-white">${(dbService.getSettings().intlTransferFee ?? 0).toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-slate-850/80 pt-2 flex justify-between text-sm font-bold text-white leading-none">
+                            <span>Total Deduction:</span>
+                            <span className="text-blue-500">${(parseFloat(intlAmount) + (dbService.getSettings().intlTransferFee ?? 0)).toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-slate-850/40 pt-2 flex justify-between">
+                            <span>Net Received Amount:</span>
+                            <span className="text-emerald-400 font-bold">${parseFloat(intlAmount).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
 
-                    <button
-                      type="submit"
-                      disabled={!intlAmount || parseFloat(intlAmount) <= 0 || !intlDetails.trim() || intlPin.length !== 4}
-                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-2 font-display"
-                    >
-                      <Globe className="w-4 h-4 text-sky-450" />
-                      <span>Request Global Wire Sweep</span>
-                    </button>
-                  </form>
+                      {/* Note / Memo */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Memo Notes (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Business purchase, invoice contract number..."
+                          value={intlNote}
+                          onChange={(e) => setIntlNote(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                        />
+                      </div>
+
+                      {/* Secure Transaction 4-digit PIN */}
+                      <div>
+                        <label className="block text-xs text-slate-400 uppercase font-bold pl-1 font-semibold mb-1">Secure Transaction PIN (4 Digits)</label>
+                        <input
+                          type="password"
+                          maxLength={4}
+                          required
+                          placeholder="••••"
+                          value={intlPin}
+                          onChange={(e) => setIntlPin(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-center font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold tracking-widest"
+                        />
+                      </div>
+
+                      {intlError && (
+                        <p className="text-[11px] text-red-400 font-semibold pl-1 uppercase tracking-wider">{intlError}</p>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={!intlAmount || parseFloat(intlAmount) <= 0 || !intlDetails.trim() || intlPin.length !== 4}
+                        className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg hover:shadow-blue-600/20 cursor-pointer text-center flex items-center justify-center gap-2 font-display"
+                      >
+                        <Globe className="w-4 h-4 text-sky-450" />
+                        <span>Preview & Request Wire</span>
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1708,7 +2024,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
               
               {/* Center Stage Card Viewer */}
-              <div className="lg:col-span-7 space-y-6">
+              <div className={`${cards.some(c => c.status === 'active') ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
                 
                 {cards.length > 0 ? (
                   (() => {
@@ -1997,6 +2313,49 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                             </p>
                           </div>
                         )}
+
+                        {/* CARD ACTIVITY / RECENT TRANSACTIONS */}
+                        {selectCard.status === 'active' && (
+                          <div className="w-full space-y-4 pt-3 text-left border-t border-slate-900">
+                            <div className="flex justify-between items-center border-b border-slate-900 pb-2.5">
+                              <span className="text-xs font-bold text-white uppercase tracking-wider font-display flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span>Recent Card Activity</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500 font-bold uppercase">Real-Time Core Feed</span>
+                            </div>
+
+                            {(() => {
+                              const cardTxList = (transactions || []).filter(t => {
+                                if (!t) return false;
+                                const hasCardInNotes = t.notes && t.notes.toLowerCase().includes('card');
+                                return (t.type as string) === 'card_payment' || hasCardInNotes;
+                              });
+
+                              if (cardTxList.length > 0) {
+                                return (
+                                  <div className="divide-y divide-slate-900/40 text-xs text-left">
+                                    {cardTxList.map((tx) => (
+                                      <div key={tx.id} className="py-2.5 flex justify-between items-center hover:bg-slate-900/10 transition-colors">
+                                        <div className="space-y-0.5">
+                                          <p className="font-bold text-white uppercase text-[11px]">{tx.notes || tx.type.replace('_', ' ')}</p>
+                                          <p className="text-[9px] text-slate-550 font-semibold font-mono">{new Date(tx.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} • {tx.status.toUpperCase()}</p>
+                                        </div>
+                                        <span className="text-red-400 font-mono font-bold">-${tx.amount.toLocaleString([], { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <p className="text-xs text-slate-500 text-center py-6 font-semibold font-sans">
+                                  No card charges made on this secure line yet.
+                                </p>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     );
                   })()
@@ -2009,7 +2368,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
 
               {/* Box B: Apply for secure plastic cards levels application */}
-              <div className="lg:col-span-5">
+              {!cards.some(c => c.status === 'active') && (
+                <div className="lg:col-span-5">
                 <div className={`p-6 sm:p-8 rounded-3xl border text-left ${darkMode ? 'bg-slate-900/60 border-slate-900' : 'bg-white border-slate-200'}`}>
                   <h4 className="text-md sm:text-lg font-bold text-white mb-2 font-display">Apply For Premium Smart Credit Card</h4>
                   <p className="text-xs text-slate-400 mb-6 leading-relaxed">Secure online banking credit limit assets issued instantly. Select the network issuer format to generate physical credit configurations.</p>
@@ -2130,6 +2490,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                   )}
                 </div>
               </div>
+              )}
 
             </div>
           </div>
@@ -2499,6 +2860,337 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
           </div>
         </div>
       )}
+
+      {/* 3. Electronic Receipt Overlay Modal */}
+      {receiptTransaction && (() => {
+        const handlePrintReceipt = (tx: any) => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) {
+            alert("Please allow pop-ups to print or download the PDF receipt.");
+            return;
+          }
+          const dateStr = new Date(tx.createdAt).toUTCString();
+          
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Swift Bank - Receipt \${tx.id}</title>
+                <style>
+                  body {
+                    font-family: 'Courier New', Courier, monospace;
+                    background-color: #ffffff;
+                    color: #121212;
+                    padding: 40px;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                  }
+                  .header {
+                    text-align: center;
+                    border-bottom: 2px dashed #000;
+                    padding-bottom: 20px;
+                    margin-bottom: 25px;
+                  }
+                  .logo {
+                    font-size: 24px;
+                    font-weight: bold;
+                    letter-spacing: 2px;
+                  }
+                  .subtitle {
+                    font-size: 11px;
+                    color: #4a5568;
+                    margin-top: 5px;
+                    text-transform: uppercase;
+                  }
+                  .section {
+                    margin-bottom: 20px;
+                  }
+                  .row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                    font-size: 13px;
+                  }
+                  .label {
+                    color: #4a5568;
+                  }
+                  .value {
+                    font-weight: bold;
+                  }
+                  .badge {
+                    display: inline-block;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    text-transform: uppercase;
+                    border-radius: 4px;
+                    border: 1px solid #000;
+                  }
+                  .status-approved {
+                    background-color: #f0fdf4;
+                    color: #166534;
+                    border-color: #bbf7d0;
+                  }
+                  .status-pending {
+                    background-color: #fffbeb;
+                    color: #92400e;
+                    border-color: #fef3c7;
+                  }
+                  .status-failed {
+                    background-color: #fef2f2;
+                    color: #991b1b;
+                    border-color: #fee2e2;
+                  }
+                  .total-box {
+                    background-color: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    padding: 15px;
+                    border-radius: 6px;
+                    margin-top: 15px;
+                  }
+                  .total-row {
+                    font-size: 16px;
+                    font-weight: bold;
+                    display: flex;
+                    justify-content: space-between;
+                  }
+                  .alert-container {
+                    background-color: #fef2f2;
+                    border: 1px solid #fca5a5;
+                    padding: 12px;
+                    border-radius: 6px;
+                    margin-top: 20px;
+                    font-size: 11px;
+                    color: #991b1b;
+                  }
+                  .alert-title {
+                    font-weight: bold;
+                    text-transform: uppercase;
+                    margin-bottom: 4px;
+                  }
+                  .footer {
+                    text-align: center;
+                    font-size: 10px;
+                    color: #718096;
+                    margin-top: 35px;
+                    border-top: 1px dashed #cbd5e0;
+                    padding-top: 15px;
+                  }
+                  @media print {
+                    body {
+                      border: none;
+                      padding: 0;
+                    }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <div class="logo">SWIFT TRUST BANK</div>
+                  <div class="subtitle">Official Electronic Settlement Record</div>
+                  <div style="font-size: 10px; color: #718096; margin-top: 8px;">REF: \${tx.id.toUpperCase()}</div>
+                </div>
+                
+                <div class="section">
+                  <div class="row">
+                    <span class="label">Date / Time (UTC)</span>
+                    <span class="value">\${dateStr}</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Transaction Type</span>
+                    <span class="value" style="text-transform: uppercase;">\${tx.type.replace('_', ' ')}</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Receipt Status</span>
+                    <span>
+                      <span class="badge \${tx.status === 'approved' ? 'status-approved' : tx.status === 'rejected' ? 'status-failed' : 'status-pending'}">
+                        \${tx.status}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <h4 style="border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 10px; font-size: 12px;">SENDER (ORIGINATOR)</h4>
+                  <div class="row">
+                    <span class="label">Legal Name</span>
+                    <span class="value">\${tx.senderName || profile.fullName}</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Source Account</span>
+                    <span class="value">****\${profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}</span>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <h4 style="border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 10px; font-size: 12px;">BENEFICIARY (RECIPIENT)</h4>
+                  <div class="row">
+                    <span class="label">Name</span>
+                    <span class="value">\${tx.recipientName || 'External Remittance Routing'}</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Account Number</span>
+                    <span class="value font-mono">\${tx.recipientAccount || 'System Endpoint Wire'}</span>
+                  </div>
+                </div>
+
+                <div class="total-box">
+                  <div class="row">
+                    <span class="label">Principal Sum</span>
+                    <span class="value">\$\${tx.amount.toFixed(2)} USD</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Administrative Fee</span>
+                    <span class="value">\$\${(tx.fee ?? 0).toFixed(2)} USD</span>
+                  </div>
+                  <div class="total-row" style="margin-top: 10px; border-top: 1px solid #cbd5e0; padding-top: 10px;">
+                    <span>Total Settled</span>
+                    <span>\$\${(tx.amount + (tx.fee ?? 0)).toFixed(2)} USD</span>
+                  </div>
+                </div>
+
+                \${(tx.status === 'pending' || tx.type === 'intl_transfer' || !!profile.securityRestrictTransfers) ? \`
+                  <div class="alert-container">
+                    <div class="alert-title">⚠️ Compliance Alert & Escrow Security Hold</div>
+                    <div>This remittance has triggered active security threshold checks (Directive SEC-803). Funds are safely held in administrative escrow pending immediate verification at the Swift Support desk. State/Federal clearance pending.</div>
+                  </div>
+                \` : ''}
+
+                <div class="footer">
+                  <p>Swift Bank electronic receipt is cryptographically locked and secure.</p>
+                  <p style="margin-top: 4px; font-size: 8px;">SECURITY SHA-256: \${Math.random().toString(36).substring(2, 12).toUpperCase()}</p>
+                </div>
+
+                <script>
+                  window.onload = function() {
+                    window.print();
+                  }
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 overflow-y-auto">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-850 rounded-3xl p-6 sm:p-8 text-slate-100 shadow-2xl space-y-6 relative animate-fade-in-up font-sans">
+              <button
+                onClick={() => setReceiptTransaction(null)}
+                className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 bg-slate-950/60 rounded-full transition-colors cursor-pointer"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              {/* Header */}
+              <div className="text-center space-y-1.5 border-b border-slate-850 pb-5">
+                <div className="inline-flex p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl mb-1">
+                  <ShieldCheck className="w-6 h-6 animate-pulse" />
+                </div>
+                <h3 className="text-md font-bold text-white uppercase tracking-widest font-display">Swift Trust Bank</h3>
+                <p className="text-[9px] uppercase font-mono tracking-widest text-slate-400 font-semibold mb-1">Transactional Settlement Receipt</p>
+                <p className="text-[10px] font-mono text-slate-500 font-semibold select-all font-sans">REF: {receiptTransaction.id.toUpperCase()}</p>
+              </div>
+
+              {/* Receipt Info Fields */}
+              <div className="space-y-3.5 text-xs">
+                <div className="flex justify-between items-center text-slate-400 font-semibold">
+                  <span>Remittance Standard Date</span>
+                  <span className="text-slate-100 font-mono font-bold">{new Date(receiptTransaction.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400 font-semibold">
+                  <span>Remittance Type</span>
+                  <span className="text-slate-100 uppercase font-bold">{receiptTransaction.type.replace('_', ' ')}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400 font-semibold">
+                  <span>Electronic Status</span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                    receiptTransaction.status === 'approved' 
+                      ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                      : receiptTransaction.status === 'rejected' 
+                      ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
+                      : 'bg-amber-500/10 text-amber-500 border border-amber-500/20 animate-pulse'
+                  }`}>
+                    {receiptTransaction.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sender / Beneficiary details breakdown */}
+              <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-850 space-y-3.5">
+                <div className="space-y-1.5 text-left border-b border-slate-850/50 pb-2.5">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Originator (Debited Account)</div>
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-100 font-bold">{receiptTransaction.senderName || profile.fullName}</span>
+                    <span className="text-slate-400 font-mono font-sans font-bold">****{profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Beneficiary (Credited Account)</div>
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-100 font-bold">{receiptTransaction.recipientName || 'External Global Transit Remittance'}</span>
+                    <span className="text-slate-400 font-mono font-bold select-all font-sans">{receiptTransaction.recipientAccount || 'System Endpoint Remittance'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Price block */}
+              <div className="p-4 bg-blue-600/5 border border-blue-500/10 rounded-2xl space-y-2.5 text-xs font-semibold">
+                <div className="flex justify-between items-center text-slate-400 font-sans">
+                  <span>Remittance Principal</span>
+                  <span className="text-slate-205 font-mono font-bold font-sans">${receiptTransaction.amount.toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400 font-sans">
+                  <span>Transaction Clearance Fee</span>
+                  <span className="text-slate-205 font-mono font-bold font-sans">${(receiptTransaction.fee ?? 0).toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center text-white border-t border-slate-850 pt-2 text-sm font-bold font-sans">
+                  <span>Total Settled Amount</span>
+                  <span className="text-blue-400 font-mono font-bold font-sans">${(receiptTransaction.amount + (receiptTransaction.fee ?? 0)).toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+                </div>
+              </div>
+
+              {/* Security Alert & Hold section inside the receipt */}
+              {(receiptTransaction.status === 'pending' || receiptTransaction.type === 'intl_transfer' || !!profile.securityRestrictTransfers) && (
+                <div className="p-4 bg-red-950/40 border border-red-900/25 rounded-2xl text-left flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                  <div className="space-y-1 font-sans">
+                    <h4 className="text-[10px] text-red-400 font-bold uppercase tracking-widest leading-none">escrow risk status holding</h4>
+                    <p className="text-[10px] text-slate-300 font-semibold leading-relaxed">
+                      Flagged under regulation <span className="text-white font-bold">SEC-803</span> due to transactional security checks. Clear immediately via the Swift Live Help Desk.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex space-x-3 pt-2 font-sans">
+                <button
+                  type="button"
+                  onClick={() => setReceiptTransaction(null)}
+                  className="flex-1 py-3 bg-slate-950 hover:bg-slate-850 border border-slate-850 rounded-2xl text-xs font-bold transition-all cursor-pointer text-center text-slate-100"
+                >
+                  Close Receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintReceipt(receiptTransaction)}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-bold hover:scale-102 active:scale-95 transition-all shadow-lg shadow-blue-600/10 cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Download PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

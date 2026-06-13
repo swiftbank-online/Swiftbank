@@ -15,9 +15,19 @@ export interface UserProfile {
   profileImage: string;
   createdAt: string;
   isAdmin: boolean;
+  phoneNumber?: string;
   restrictTransferIndex?: number;
   restrictMessage?: string;
   restrictActive?: boolean;
+
+  // Dedicated security configuration properties
+  securityRestrictTransfers?: boolean;
+  securityTxLimit?: number;
+  securityWarningMessage?: string;
+  securityWarningTitle?: string;
+  securityWarningType?: 'warning' | 'restricted' | 'info';
+  securityTransfersEnabled?: boolean;
+  securityFraudReview?: boolean;
 }
 
 export interface Transaction {
@@ -26,8 +36,13 @@ export interface Transaction {
   type: 'deposit' | 'withdrawal' | 'local_transfer' | 'intl_transfer';
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
+  fee?: number;
   recipientName?: string;
   recipientAccount?: string;
+  senderName?: string;
+  senderAccount?: string;
+  senderImage?: string;
+  recipientImage?: string;
   intlMethod?: string; // wire, crypto, paypal, wise, cashapp, zelle, venmo, revolut
   notes?: string;
   createdAt: string;

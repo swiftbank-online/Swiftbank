@@ -104,6 +104,19 @@
         "read": { "type": "boolean" }
       },
       "required": ["id", "userId", "title", "message", "createdAt", "read"]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Scrubbed public directory profiles for recipient verification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "profileImage": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "fullName", "accountNumber", "status"]
     }
   },
   "firestore": {
@@ -130,6 +143,10 @@
     "/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "User alert systems"
+    },
+    "/public_profiles/{userId}": {
+      "schema": "PublicProfile",
+      "description": "Scrubbed safe public user profiles"
     }
   }
 }

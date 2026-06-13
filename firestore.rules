@@ -102,6 +102,15 @@ service cloud.firestore {
         && data.message is string && data.message.size() <= 2000;
     }
 
+    // Public Profile Validator
+    function isValidPublicProfile(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.fullName is string && data.fullName.size() <= 100
+        && data.accountNumber is string && data.accountNumber.size() == 10
+        && (data.status == "active" || data.status == "blocked")
+        && (data.profileImage == null || (data.profileImage is string && data.profileImage.size() <= 500));
+    }
+
 
     // --- MATCH BLOCKS FOR COLLECTIONS ---
 
@@ -160,6 +169,13 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update: if isSignedIn() && isOwner(resource.data.userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
       allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // 8. Public Profiles Collection (PII-scrubbed directory for transfer verification)
+    match /public_profiles/{userId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if (isOwner(userId) && isValidPublicProfile(incoming())) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     // 7. Explicit Admin Role Access Document

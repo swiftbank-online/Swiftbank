@@ -47,6 +47,35 @@ const COUNTRIES = [
   "Brazil"
 ];
 
+export const DIAL_CODES: Record<string, string> = {
+  "United States": "+1",
+  "Canada": "+1",
+  "United Kingdom": "+44",
+  "Australia": "+61",
+  "Germany": "+49",
+  "France": "+33",
+  "Italy": "+39",
+  "Spain": "+34",
+  "Netherlands": "+31",
+  "Belgium": "+32",
+  "Switzerland": "+41",
+  "Sweden": "+46",
+  "Norway": "+47",
+  "Denmark": "+45",
+  "Ireland": "+353",
+  "Nigeria": "+234",
+  "South Africa": "+27",
+  "Ghana": "+233",
+  "Kenya": "+254",
+  "United Arab Emirates": "+971",
+  "Saudi Arabia": "+966",
+  "India": "+91",
+  "Singapore": "+65",
+  "Malaysia": "+60",
+  "Japan": "+81",
+  "Brazil": "+55"
+};
+
 export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }: AuthFlowProps) {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [step, setStep] = useState(1); // 1 = Entry Options, 2 = Personal Details, 3 = PIN
@@ -65,13 +94,18 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
   const [fullName, setFullName] = useState("");
   const [age, setAge] = useState<number | "">("");
   const [country, setCountry] = useState("United States");
+  const [phoneNumberRest, setPhoneNumberRest] = useState("");
   const [pin, setPin] = useState(""); // 4-digit PIN
 
   // Login Fields
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
   const handleGoogleSignIn = async () => {
+    if (isAuthLoading) return;
+    setIsAuthLoading(true);
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
@@ -102,11 +136,18 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
       console.error("Google auth failure:", e);
       const isDomainError = e.code === 'auth/unauthorized-domain' || 
                             (e.message && e.message.includes('auth/unauthorized-domain'));
+      const isCancelledError = e.code === 'auth/cancelled-popup-request' || 
+                               e.code === 'auth/popup-closed-by-user' ||
+                               (e.message && (e.message.includes('cancelled-popup-request') || e.message.includes('popup-closed-by-user')));
       if (isDomainError) {
         setError("auth/unauthorized-domain");
+      } else if (isCancelledError) {
+        setError("auth/cancelled-popup-request");
       } else {
         setError(e.message || "Failed to complete Google Sign-In.");
       }
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -142,6 +183,8 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
           await signOut(auth);
           return;
         }
+        localStorage.setItem('swift_saved_email', loginEmail);
+        localStorage.setItem('swift_saved_pwd', loginPassword);
         dbService.setupListeners(ud.userId, ud.isAdmin);
         onAuthSuccess(ud);
       } else {
@@ -161,6 +204,8 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
           newProfile.isAdmin = true;
         }
 
+        localStorage.setItem('swift_saved_email', loginEmail);
+        localStorage.setItem('swift_saved_pwd', loginPassword);
         dbService.setupListeners(newProfile.userId, newProfile.isAdmin);
         onAuthSuccess(newProfile);
       }
@@ -191,6 +236,10 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
       setError("Please fill out all bio fields.");
       return;
     }
+    if (!phoneNumberRest || phoneNumberRest.replace(/\D/g, '').length < 6) {
+      setError("Please enter a valid phone number (at least 6 digits) to establish your account number.");
+      return;
+    }
     if (Number(age) < 18) {
       setError("You must be at least 18 years old to open an account with Swift Bank.");
       return;
@@ -215,13 +264,18 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
               uid = userCredential.user.uid;
             }
 
+            const dialCode = DIAL_CODES[country] || "+1";
+            const cleanPhoneDigits = phoneNumberRest.replace(/\D/g, '');
+
             const newUser = await dbService.registerUser({
               userId: uid,
               fullName,
               email,
               age: Number(age),
               country,
-              pin: newPin
+              pin: newPin,
+              phoneNumber: dialCode + cleanPhoneDigits,
+              accountNumber: cleanPhoneDigits
             });
 
             // If this is the specific requested admin email, elevate authority
@@ -301,6 +355,38 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
                 💡 <strong className="text-slate-200">Test immediately:</strong> Use the <strong className="text-slate-200">"Sign up with Email"</strong> link / <strong className="text-slate-200">Email fields</strong> below to create an account and test without adding domains!
               </p>
             </div>
+          ) : error && error === "auth/cancelled-popup-request" ? (
+            <div className="mb-6 p-5 bg-blue-500/10 border border-blue-500/20 text-blue-300 rounded-2xl text-xs space-y-3 font-medium">
+              <div className="flex items-center space-x-2 text-blue-400 font-bold">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 text-blue-400" />
+                <span>Sign-In Popup Blocked or Closed</span>
+              </div>
+              <p className="leading-relaxed text-slate-300">
+                The Google Auth popup was cancelled, closed, or blocked by your browser settings.
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-450 bg-slate-950/40 p-3 rounded-xl border border-slate-900/60 font-medium">
+                💡 <strong className="text-slate-200">Troubleshooting Tips:</strong>
+                <span className="block mt-1 pl-3 list-item">• If running inside AI Studio preview iframe, browser policies can prevent popups.</span>
+                <span className="block mt-1 pl-3 list-item">• Open the app in a new tab by clicking the icon on the top right, or toggle popups on in your address bar!</span>
+                <span className="block mt-1 pl-3 list-item">• Alternatively, use <strong className="text-slate-200">Email Sign Up / Login</strong> (no popups required).</span>
+              </p>
+              <div className="pt-1 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setError(null); }}
+                  className="flex-1 py-2 bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-900 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                >
+                  Dismiss
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setError(null); handleGoogleSignIn(); }}
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-blue-600/10"
+                >
+                  Retry Sign-In
+                </button>
+              </div>
+            </div>
           ) : error && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs font-medium flex items-start space-x-3">
               <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-400" />
@@ -369,7 +455,8 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
                 type="button"
                 id="google-login-button"
                 onClick={handleGoogleSignIn}
-                className="w-full py-3 bg-slate-950 hover:bg-slate-850 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-2xl text-xs font-bold flex items-center justify-center space-x-3 transition-all active:scale-95 cursor-pointer"
+                disabled={isAuthLoading}
+                className="w-full py-3 bg-slate-950 hover:bg-slate-850 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-2xl text-xs font-bold flex items-center justify-center space-x-3 transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.6c-.28 1.45-1.11 2.68-2.35 3.51v2.91h3.79c2.22-2.05 3.7-5.07 3.7-8.62z"/>
@@ -423,7 +510,8 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
                       <button
                         type="button"
                         onClick={handleGoogleSignIn}
-                        className="w-full py-4 bg-slate-950 hover:bg-slate-850 hover:border-slate-700 text-slate-100 border border-slate-800 rounded-2xl text-xs font-bold flex items-center justify-center space-x-3 transition-all active:scale-95 cursor-pointer shadow-sm"
+                        disabled={isAuthLoading}
+                        className="w-full py-4 bg-slate-950 hover:bg-slate-850 hover:border-slate-700 text-slate-100 border border-slate-800 rounded-2xl text-xs font-bold flex items-center justify-center space-x-3 transition-all active:scale-95 cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.6c-.28 1.45-1.11 2.68-2.35 3.51v2.91h3.79c2.22-2.05 3.7-5.07 3.7-8.62z"/>
@@ -560,7 +648,9 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
                         <Globe className="absolute left-4 top-3.5 w-4.5 h-4.5 text-slate-500" />
                         <select
                           value={country}
-                          onChange={(e) => setCountry(e.target.value)}
+                          onChange={(e) => {
+                            setCountry(e.target.value);
+                          }}
                           className="w-full bg-slate-950/80 border border-slate-850 focus:border-blue-500 rounded-2xl py-3 pl-12 pr-4 text-xs sm:text-sm text-slate-200 focus:outline-none transition-all appearance-none cursor-pointer"
                         >
                           {COUNTRIES.map((c) => (
@@ -569,6 +659,26 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
                         </select>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">Telephone / Account Number Setup</label>
+                    <div className="relative flex items-center bg-slate-950/80 border border-slate-850 focus-within:border-blue-500 rounded-2xl">
+                      <div className="pl-4 pr-3.5 text-xs sm:text-sm font-bold text-blue-400 select-none border-r border-slate-850 mr-2.5">
+                        {DIAL_CODES[country] || "+1"}
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        value={phoneNumberRest}
+                        onChange={(e) => setPhoneNumberRest(e.target.value.replace(/\D/g, ''))}
+                        placeholder="e.g. 3015550199"
+                        className="w-full bg-transparent py-3 pr-4 text-xs sm:text-sm text-slate-100 focus:outline-none transition-all placeholder:text-slate-600"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                      The digits entered will form your unique Swift <span className="text-blue-400 font-bold">Account Number</span>: <span className="font-mono text-slate-300 font-bold">{phoneNumberRest || "_______"}</span>
+                    </p>
                   </div>
 
                   <div className="flex space-x-3 pt-4">
