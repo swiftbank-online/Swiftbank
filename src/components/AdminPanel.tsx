@@ -1322,7 +1322,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
           {activeTab === 'security' && (
             <div className="space-y-6 animate-fade-in text-left">
               <div>
-                <h2 className="text-xl font-bold text-white font-display">Client Security Mainframe</h2>
+                <h2 className="text-xl font-bold text-white font-display">Client Security Panel</h2>
                 <p className="text-xs text-slate-400">Manage transaction limits, toggle systemic freezes, and configure customized alert notices for individual customer portfolios.</p>
               </div>
 

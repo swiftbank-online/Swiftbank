@@ -73,7 +73,7 @@ export default function LiveSupportWidget({ userId, userName }: LiveSupportWidge
   };
 
   return (
-    <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 font-sans">
+    <div className="fixed bottom-26 sm:bottom-6 right-4 sm:right-6 z-40 font-sans">
       {/* Closed Button Widget */}
       {!isOpen && (
         <button

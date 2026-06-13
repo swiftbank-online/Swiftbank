@@ -69,18 +69,18 @@ export default function LandingPage({ onNavigate, onNavigateAdmin }: LandingPage
             </span>
           </div>
 
-          <div className="flex items-center space-x-3.5">
+          <div className="flex items-center space-x-1.5 sm:space-x-3.5">
             <button 
               id="landing-login-nav-btn"
               onClick={() => onNavigate('login')} 
-              className="px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
+              className="px-2 sm:px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
               Sign In
             </button>
             <button 
               id="landing-register-nav-btn"
               onClick={() => onNavigate('register')} 
-              className="px-5 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all cursor-pointer"
+              className="px-3.5 sm:px-5 py-2 sm:py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
             >
               Open Account
             </button>

@@ -756,7 +756,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </button>
 
               {showNotifications && (
-                <div className={`absolute right-0 mt-3 w-80 rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
+                <div className={`absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-[320px] rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-xs font-bold uppercase tracking-widest text-blue-500">Notifications</h4>
                     <button 
@@ -807,22 +807,22 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
         {activeTab === 'home' && (
           <div className="space-y-6">
             {/* Top welcome, avatar and secure clock marquee */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-transparent p-1 rounded-2xl">
-              <div className="flex items-center space-x-3.5">
+            <div className="flex flex-col md:flex-row justify-between items-center md:items-center gap-4 bg-transparent p-1 rounded-2xl w-full">
+              <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3.5 w-full sm:w-auto text-center sm:text-left">
                 <img
                   src={profile.profileImage || DEFAULT_AVATAR}
                   alt="Greeting avatar"
                   className="w-12 h-12 rounded-full object-cover border border-blue-500/30 bg-slate-950 shadow-md flex-shrink-0"
                 />
-                <div className="text-left">
-                  <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display text-white flex items-center gap-2">
+                <div className="text-center sm:text-left">
+                  <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight font-display text-white flex flex-col sm:flex-row sm:items-center gap-x-2 gap-y-0.5 justify-center sm:justify-start">
                     <span>Welcome back,</span>
                     <span className="text-blue-500">{profile.fullName}</span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Swift Vault Online Mainframe Desk • Account Status: <span className="text-emerald-400 font-bold font-mono text-[10px]">SECURED</span></p>
+                  <p className="text-xs text-slate-400 mt-1 whitespace-normal">Swift Online Banking Portal • Account Status: <span className="text-emerald-400 font-bold font-mono text-[10px]">SECURED</span></p>
                 </div>
               </div>
-              <div className={`px-4 py-2 rounded-2xl border text-xs font-mono font-semibold flex items-center space-x-2 ${
+              <div className={`px-4 py-2 rounded-2xl border text-xs font-mono font-semibold flex items-center space-x-2 w-full sm:w-auto justify-center ${
                 darkMode ? 'bg-slate-900/40 border-slate-850 text-slate-300' : 'bg-white border-slate-200 text-slate-700'
               }`}>
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
@@ -839,7 +839,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-[10px] uppercase font-bold tracking-widest text-slate-300/80 font-mono">Elite Platinum Vault</span>
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-slate-300/80 font-mono">Premium Checking Account</span>
                     <h3 className="text-white text-md font-bold font-display mt-0.5">Swift Bank</h3>
                   </div>
                   <div className="flex items-center space-x-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider">
@@ -849,7 +849,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 </div>
 
                 <div className="my-3">
-                  <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Available Vault Balance</span>
+                  <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Available Account Balance</span>
                   <p className="text-4.5xl font-extrabold font-mono tracking-tight text-white mt-0.5">
                     ${profile.balance.toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -961,7 +961,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             </div>
 
             {/* Financial Summary KPI row */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+             <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className={`p-5 rounded-2xl border ${darkMode ? 'bg-slate-900/60 border-slate-900' : 'bg-white border-slate-200'}`}>
                 <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">Total Deposits</span>
                 <p className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400 mt-1">
@@ -977,14 +977,14 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 <p className="text-[9px] text-slate-500 mt-1">Life-time outbound cleared</p>
               </div>
               <div className={`p-5 rounded-2xl border ${darkMode ? 'bg-slate-900/60 border-slate-900' : 'bg-white border-slate-200'}`}>
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">Active Networks</span>
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">Active Cards</span>
                 <p className="text-xl sm:text-2xl font-extrabold font-mono text-blue-400 mt-1">
-                  {cards.filter(c => c.status === 'active').length} Plastic Cards
+                  {cards.filter(c => c.status === 'active').length} Active Cards
                 </p>
-                <p className="text-[9px] text-slate-500 mt-1">Virtual credit limits</p>
+                <p className="text-[9px] text-slate-500 mt-1">Authorized card lines</p>
               </div>
               <div className={`p-5 rounded-2xl border ${darkMode ? 'bg-slate-900/60 border-slate-900' : 'bg-white border-slate-200'}`}>
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">Vault Shield Index</span>
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">Account Security</span>
                 <p className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400 mt-1 flex items-center gap-1.5">
                   <ShieldCheck className="w-5.5 h-5.5" />
                   <span>99.9% Secure</span>
@@ -996,7 +996,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             {/* Home recent transactions */}
             <div className={`p-6 rounded-3xl border ${darkMode ? 'bg-slate-900/60 border-slate-900' : 'bg-white border-slate-200'}`}>
               <div className="flex justify-between items-center mb-4">
-                <span className="text-xs uppercase text-slate-500 font-bold tracking-widest font-mono">Recent Operations</span>
+                <span className="text-xs uppercase text-slate-500 font-bold tracking-widest font-mono">Recent Transactions</span>
                 <button 
                   onClick={() => handleTabChange('transactions')}
                   className="text-xs text-blue-500 font-bold hover:underline"
@@ -1055,13 +1055,13 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 <p className="text-xs text-slate-400">Search your full transfer and deposit records</p>
               </div>
 
-              {/* Filters triggers */}
-              <div className="flex items-center space-x-2.5">
+              {/* Filters triggers - horizontal scroll on mobile, wrap on desktop */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 sm:pb-0 scrollbar-none max-w-full -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible w-[calc(100%+2rem)] sm:w-auto">
                 {['all', 'deposit', 'withdrawal', 'local_transfer', 'intl_transfer'].map((tf) => (
                   <button
                     key={tf}
                     onClick={() => setTxTypeFilter(tf as any)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                       txTypeFilter === tf 
                         ? 'bg-blue-600 text-white' 
                         : 'bg-slate-900 text-slate-400 border border-slate-850 hover:text-white'
@@ -1085,8 +1085,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               />
             </div>
 
-            {/* Transactions table representation */}
-            <div className="overflow-x-auto rounded-3xl border border-slate-900 bg-slate-900/30">
+            {/* Desktop transactions table representation */}
+            <div className="hidden md:block overflow-x-auto rounded-3xl border border-slate-900 bg-slate-900/30">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950 uppercase font-bold text-[10px] text-slate-500">
                   <tr>
@@ -1114,7 +1114,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                           tx.status === 'approved' 
                             ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
                             : tx.status === 'rejected' 
-                            ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                            ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
                             : 'bg-amber-500/10 text-amber-500 border border-amber-500/20 animate-pulse'
                         }`}>
                           {tx.status}
@@ -1145,8 +1145,68 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile transactions card list layout */}
+            <div className="block md:hidden space-y-3">
+              {filteredTxs.map((tx) => (
+                <div 
+                  key={tx.id} 
+                  className={`p-4 rounded-3xl border text-left space-y-3.5 ${
+                    darkMode ? 'bg-slate-900/60 border-slate-900/85' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="font-mono font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <span>ID:</span>
+                      <span className="select-all text-slate-400">{tx.id}</span>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase border ${
+                      tx.status === 'approved' 
+                        ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                        : tx.status === 'rejected' 
+                        ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                        : 'bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse'
+                    }`}>
+                      {tx.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="font-bold text-white uppercase text-xs break-words">{tx.notes || tx.type.replace('_', ' ')}</p>
+                    {tx.recipientName && (
+                      <p className="text-[10px] text-slate-400 font-mono leading-none">Recipient: {tx.recipientAccount || tx.recipientName}</p>
+                    )}
+                    <p className="text-[10px] text-slate-500 font-medium">{new Date(tx.createdAt).toLocaleString()}</p>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-slate-950/40">
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Amount Settled</p>
+                      <p className={`font-mono font-bold text-sm ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
+                        {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                      </p>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setReceiptTransaction(tx)}
+                      className="px-3.5 py-2 bg-slate-950 hover:bg-blue-600 border border-slate-850 hover:border-blue-500 rounded-xl text-[10px] font-bold text-slate-300 hover:text-white transition-all cursor-pointer flex items-center space-x-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>Receipt</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {filteredTxs.length === 0 && (
+                <p className="text-center py-8 text-slate-500 text-xs">No transactions match your search criteria.</p>
+              )}
+            </div>
           </div>
-        )}        {/* TAB 3: FUND YOUR ACCOUNT & OUTBOUND TRANSFER */}
+        )}
+        {/* TAB 3: FUND YOUR ACCOUNT & OUTBOUND TRANSFER */}
         {activeTab === 'deposit' && (
           <div className="space-y-6 animate-fade-in text-left">
             <div className="border-b border-slate-900 pb-4">

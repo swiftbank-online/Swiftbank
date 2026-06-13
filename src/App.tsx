@@ -154,13 +154,19 @@ export default function App() {
   useEffect(() => {
     const updateFavicon = (settings: any) => {
       if (settings && settings.faviconUrl) {
-        let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-        if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          document.head.appendChild(link);
-        }
-        link.href = settings.faviconUrl;
+        const rels = ['icon', 'shortcut icon', 'apple-touch-icon'];
+        rels.forEach((rel) => {
+          let link = document.querySelector(`link[rel='${rel}']`) as HTMLLinkElement;
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = rel;
+            document.head.appendChild(link);
+          }
+          link.href = settings.faviconUrl;
+        });
+      }
+      if (settings && settings.bankName) {
+        document.title = `${settings.bankName} - Secure Online Banking`;
       }
     };
 
@@ -177,9 +183,9 @@ export default function App() {
       }
     };
 
-    window.addEventListener('swiftbank_settings_updated', handleSettingsUpdate);
+    window.addEventListener('swiftbank_update_settings', handleSettingsUpdate);
     return () => {
-      window.removeEventListener('swiftbank_settings_updated', handleSettingsUpdate);
+      window.removeEventListener('swiftbank_update_settings', handleSettingsUpdate);
     };
   }, []);
 
@@ -188,19 +194,19 @@ export default function App() {
     setIsLoading(true);
     let path = "/";
     if (nextView === 'landing') {
-      setLoadingMsg("Syncing public-facing branding coefficients...");
+      setLoadingMsg("Loading website settings...");
       path = "/";
     } else if (nextView === 'login') {
-      setLoadingMsg("Checking bank compliance firewalls...");
+      setLoadingMsg("Connecting to secure server...");
       path = "/login";
     } else if (nextView === 'register') {
       setLoadingMsg("Opening secure registration portal...");
       path = "/register";
     } else if (nextView === 'dashboard') {
-      setLoadingMsg("Authenticating visual assets & transaction limits...");
+      setLoadingMsg("Retrieving your dashboard...");
       path = "/dashboard";
     } else if (nextView === 'admin') {
-      setLoadingMsg("Opening administrative mainframe desk...");
+      setLoadingMsg("Opening administrative portal...");
       path = "/admin/login";
     }
     
@@ -390,7 +396,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5">Mainframe Password</label>
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5">Admin Password</label>
                       <input 
                         type="password"
                         required
@@ -405,7 +411,7 @@ export default function App() {
                       type="submit"
                       className="w-full py-3 bg-red-650 hover:bg-red-600 text-white font-semibold rounded-xl text-xs sm:text-sm active:scale-95 transition-all text-xs tracking-wider"
                     >
-                      Authenticate Credentials Code
+                      Authenticate Admin Session
                     </button>
                   </form>
 
