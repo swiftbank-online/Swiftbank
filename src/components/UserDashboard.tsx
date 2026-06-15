@@ -810,7 +810,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </button>
 
               {showNotifications && (
-                <div className={`absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-[320px] rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
+                <div className={`fixed sm:absolute top-20 sm:top-auto sm:mt-3 right-4 sm:right-0 left-4 sm:left-auto w-auto sm:w-80 rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-xs font-bold uppercase tracking-widest text-blue-500">Notifications</h4>
                     <button 
