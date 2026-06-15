@@ -122,7 +122,7 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
           await signOut(auth);
           return;
         }
-        dbService.setupListeners(profileData.userId, profileData.isAdmin);
+        dbService.setupListeners(firebaseUser.uid, profileData.isAdmin);
         onAuthSuccess(profileData);
       } else {
         // Unregistered user - redirect into Google registration flow (Bio setup in Step 2)
@@ -185,7 +185,7 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
         }
         localStorage.setItem('swift_saved_email', loginEmail);
         localStorage.setItem('swift_saved_pwd', loginPassword);
-        dbService.setupListeners(ud.userId, ud.isAdmin);
+        dbService.setupListeners(uid, ud.isAdmin);
         onAuthSuccess(ud);
       } else {
         // Create superadmin profile
@@ -206,7 +206,7 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
 
         localStorage.setItem('swift_saved_email', loginEmail);
         localStorage.setItem('swift_saved_pwd', loginPassword);
-        dbService.setupListeners(newProfile.userId, newProfile.isAdmin);
+        dbService.setupListeners(uid, newProfile.isAdmin);
         onAuthSuccess(newProfile);
       }
     } catch (e: any) {
@@ -285,7 +285,7 @@ export default function AuthFlow({ initialMode, onAuthSuccess, onBackToLanding }
               newUser.isAdmin = true;
             }
 
-            dbService.setupListeners(newUser.userId, newUser.isAdmin);
+            dbService.setupListeners(uid, newUser.isAdmin);
             onAuthSuccess(newUser);
           } catch (e: any) {
             setError(e.message || "Failed to finalize account opening. Please try again.");

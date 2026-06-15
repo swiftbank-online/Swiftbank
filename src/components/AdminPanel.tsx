@@ -26,7 +26,8 @@ import {
   TrendingUp,
   SlidersHorizontal,
   FolderLock,
-  Clock
+  Clock,
+  History
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -35,7 +36,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
-  const [activeTab, setActiveTab ] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings' | 'security'>('overview');
+  const [activeTab, setActiveTab ] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings' | 'security' | 'backup'>('overview');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Live state from dbService
@@ -95,6 +96,28 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   const [securityWarningMessage, setSecurityWarningMessage] = useState("Your transaction frequency has initiated our advanced review procedures. To protect assets, please verify your credentials with our support branch.");
   const [securitySuccess, setSecuritySuccess] = useState(false);
 
+  // Backup Transactions state parameters
+  const [backSelectedUserId, setBackSelectedUserId] = useState("");
+  const [backTxType, setBackTxType] = useState<'deposit' | 'withdrawal' | 'local_transfer' | 'intl_transfer' | 'card_payment'>('deposit');
+  const [backAmount, setBackAmount] = useState(100);
+  const [backFee, setBackFee] = useState(0);
+  const [backStatus, setBackStatus] = useState<'approved' | 'pending' | 'rejected'>('approved');
+  const [backDateTime, setBackDateTime] = useState(() => {
+    const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
+    return localISOTime;
+  });
+  const [backNotes, setBackNotes] = useState("");
+  const [backRecipientName, setBackRecipientName] = useState("");
+  const [backRecipientAccount, setBackRecipientAccount] = useState("");
+  const [backSenderName, setBackSenderName] = useState("");
+  const [backSenderAccount, setBackSenderAccount] = useState("");
+  const [backIntlMethod, setBackIntlMethod] = useState("wire");
+  const [backAdjustBalance, setBackAdjustBalance] = useState(true);
+  const [backSuccess, setBackSuccess] = useState<string | null>(null);
+  const [backError, setBackError] = useState<string | null>(null);
+  const [backIsSubmitting, setBackIsSubmitting] = useState(false);
+
   useEffect(() => {
     setBankName(landingSettings.bankName || "");
     setBankAccountName(landingSettings.bankAccountName || "");
@@ -125,6 +148,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     window.addEventListener('swiftbank_update_transactions', handleSync);
     window.addEventListener('swiftbank_update_cards', handleSync);
     window.addEventListener('swiftbank_update_messages', handleSync);
+    window.addEventListener('swiftbank_update_settings', handleSync);
 
     // Seed FAQ raw editable
     try {
@@ -140,6 +164,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
       window.removeEventListener('swiftbank_update_transactions', handleSync);
       window.removeEventListener('swiftbank_update_cards', handleSync);
       window.removeEventListener('swiftbank_update_messages', handleSync);
+      window.removeEventListener('swiftbank_update_settings', handleSync);
     };
   }, []);
 
@@ -257,6 +282,54 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
       setShowSettingsSuccess(false);
     }, 3000);
     syncAdminState();
+  };
+
+  const handleBackupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!backSelectedUserId) {
+      setBackError("Please select a target user portfolio registry context.");
+      return;
+    }
+
+    setBackIsSubmitting(true);
+    setBackSuccess(null);
+    setBackError(null);
+
+    try {
+      const selectedUser = allUsers.find(u => u.userId === backSelectedUserId);
+      const isCard = backTxType === 'card_payment';
+      const notesWithCard = isCard ? (backNotes.toLowerCase().includes('card') ? backNotes : `${backNotes} (Card Charge)`).trim() : backNotes.trim();
+
+      const txPayload = {
+        userId: backSelectedUserId,
+        type: backTxType,
+        amount: Number(backAmount),
+        fee: Number(backFee),
+        status: backStatus,
+        notes: notesWithCard,
+        createdAt: new Date(backDateTime).toISOString(),
+        senderName: backTxType === 'deposit' ? "System Deposit Desk" : (selectedUser?.fullName || "Account Owner"),
+        senderAccount: selectedUser?.accountNumber || "",
+        recipientName: backRecipientName || undefined,
+        recipientAccount: backRecipientAccount || undefined,
+        intlMethod: backTxType === 'intl_transfer' ? backIntlMethod : undefined
+      };
+
+      await dbService.createBackupTransaction(txPayload, backAdjustBalance);
+      
+      setBackSuccess("Historically backed-up ledger transaction created and synchronized successfully!");
+      // Reset some fields
+      setBackAmount(100);
+      setBackFee(0);
+      setBackNotes("");
+      setBackRecipientName("");
+      setBackRecipientAccount("");
+      syncAdminState();
+    } catch (err: any) {
+      setBackError(err.message || "Failed to create historical backup index transaction.");
+    } finally {
+      setBackIsSubmitting(false);
+    }
   };
 
   const readFileAsDataURL = (file: File): Promise<string> => {
@@ -447,7 +520,8 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                 { id: 'chat', icon: MessageSquare, label: 'Messages' },
                 { id: 'security', icon: FolderLock, label: 'Security' },
                 { id: 'landing-page', icon: Layout, label: 'Landing Page' },
-                { id: 'settings', icon: Settings, label: 'Settings' }
+                { id: 'settings', icon: Settings, label: 'Settings' },
+                { id: 'backup', icon: History, label: 'Backup Tx' }
               ].map((item) => {
                 const isActive = activeTab === item.id;
                 return (
@@ -1315,6 +1389,377 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: BACKUP TRANSACTIONS PANEL */}
+          {activeTab === 'backup' && (
+            <div className="space-y-6 animate-fade-in text-left">
+              <div>
+                <h2 className="text-xl font-bold text-white font-display">Historical Ledger Backup Engine</h2>
+                <p className="text-xs text-slate-400">Back-office utility to forcefully register past statements, deposit logs, wire transfers, and credit card transits into member portfolios.</p>
+              </div>
+
+              {backSuccess && (
+                <div className="p-4 bg-emerald-950/40 border border-emerald-900 text-emerald-400 rounded-2xl text-xs font-semibold animate-fade-in">
+                  {backSuccess}
+                </div>
+              )}
+
+              {backError && (
+                <div className="p-4 bg-red-950/40 border border-red-900 text-red-400 rounded-2xl text-xs font-semibold animate-fade-in">
+                  {backError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* BACKUP FORM PANEL */}
+                <form onSubmit={handleBackupSubmit} className="lg:col-span-8 bg-slate-900/30 border border-slate-900 p-6 sm:p-8 rounded-3xl space-y-6">
+                  <div className="border-b border-slate-900 pb-4 flex items-center justify-between">
+                    <span className="text-xs uppercase text-teal-500 font-mono font-bold tracking-wider">Initialize Historical Ledger Ticket</span>
+                    <span className="bg-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-500">ADMINISTRATIVE ACCESS CLIENT</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* Select Portfolio Context */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Customer Portfolio Registry</label>
+                      <select
+                        required
+                        value={backSelectedUserId}
+                        onChange={(e) => setBackSelectedUserId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="">-- Select Member Account --</option>
+                        {allUsers.filter(u => !u.isAdmin).map((u) => (
+                          <option key={u.userId} value={u.userId}>
+                            {u.fullName.toUpperCase()} ({u.accountNumber}) — Bal: ${u.balance?.toLocaleString()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Transaction Entry Type */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Transaction Ledger Type</label>
+                      <select
+                        value={backTxType}
+                        onChange={(e) => {
+                          setBackTxType(e.target.value as any);
+                          // Suggest realistic fees based on type
+                          if (e.target.value === 'intl_transfer') setBackFee(landingSettings.intlTransferFee ?? 25);
+                          else if (e.target.value === 'local_transfer') setBackFee(landingSettings.localTransferFee ?? 0);
+                          else setBackFee(0);
+                        }}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="deposit">Deposit / Top-up (Credit)</option>
+                        <option value="withdrawal">Alternative Withdrawal (Debit)</option>
+                        <option value="local_transfer">Local Wire Remittance (Debit)</option>
+                        <option value="intl_transfer">International Remittance (Debit)</option>
+                        <option value="card_payment">Credit / Debit Card Transaction (Debit)</option>
+                      </select>
+                    </div>
+
+                    {/* Financial Amount */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Ledger Amount ($ USD)</label>
+                      <input 
+                        type="number" 
+                        required
+                        min="0.01"
+                        step="0.01"
+                        value={backAmount}
+                        onChange={(e) => setBackAmount(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        placeholder="e.g. 2500.00"
+                      />
+                    </div>
+
+                    {/* Financial Fee */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Processing Surcharges / Fee ($)</label>
+                      <input 
+                        type="number" 
+                        required
+                        min="0"
+                        step="0.01"
+                        value={backFee}
+                        onChange={(e) => setBackFee(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Custom DateTime Picker */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Historical Settled Timestamp</label>
+                      <input 
+                        type="datetime-local" 
+                        required
+                        value={backDateTime}
+                        onChange={(e) => setBackDateTime(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-slate-500">Allows back-dating statements to represent former months or specific schedules.</p>
+                    </div>
+
+                    {/* Ledger Status */}
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Ledger Status</label>
+                      <select
+                        value={backStatus}
+                        onChange={(e) => setBackStatus(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="approved">Success / Approved (Settled)</option>
+                        <option value="pending">Processing / Pending Audit</option>
+                        <option value="rejected">Declined / Failed / Void</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Fields Section based on selected Type */}
+                  {(backTxType === 'local_transfer' || backTxType === 'intl_transfer' || backTxType === 'card_payment') && (
+                    <div className="p-5 bg-slate-950/40 rounded-2xl border border-slate-900 space-y-4 animate-fade-in">
+                      <h4 className="text-[10px] text-blue-500 uppercase font-mono font-bold tracking-wider">
+                        {backTxType === 'card_payment' ? "Card Merchant & Narrative Ledger" : "Wire Beneficiary Ledger Info"}
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">
+                            {backTxType === 'card_payment' ? "Merchant Name / Outlet" : "Beneficiary / Account Name"}
+                          </label>
+                          <input 
+                            type="text" 
+                            required
+                            value={backRecipientName}
+                            onChange={(e) => setBackRecipientName(e.target.value)}
+                            placeholder={backTxType === 'card_payment' ? "e.g. AMZN Prime Membership" : "e.g. John Doe Holdings Ltd"}
+                            className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {backTxType !== 'card_payment' && (
+                          <div className="space-y-2">
+                            <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Beneficiary Bank Account Number</label>
+                            <input 
+                              type="text" 
+                              required
+                              value={backRecipientAccount}
+                              onChange={(e) => setBackRecipientAccount(e.target.value)}
+                              placeholder="e.g. US9912048921"
+                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            />
+                          </div>
+                        )}
+
+                        {backTxType === 'intl_transfer' && (
+                          <div className="space-y-2">
+                            <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">International Delivery Method</label>
+                            <select
+                              value={backIntlMethod}
+                              onChange={(e) => setBackIntlMethod(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            >
+                              <option value="wire">SWIFT/Wire transfer</option>
+                              <option value="crypto">Crypto Wallet Delivery</option>
+                              <option value="wise">Wise (TransferWise)</option>
+                              <option value="paypal">PayPal Escrow</option>
+                              <option value="cashapp">CashApp Direct Link</option>
+                              <option value="zelle">Zelle Transit Code</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transaction notes & Statement Description */}
+                  <div className="space-y-2">
+                    <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider">Statement Narrative Description (Visible to User)</label>
+                    <textarea 
+                      required
+                      rows={3}
+                      value={backNotes}
+                      onChange={(e) => setBackNotes(e.target.value)}
+                      placeholder="e.g. Monthly cloud computing service premium authorization, or corporate payout wire index."
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:ring-1 focus:ring-blue-500 focus:outline-none resize-none font-medium"
+                    />
+                  </div>
+
+                  {/* Balanced Ledger check option */}
+                  <div className="p-4 bg-blue-955/10 border border-blue-900/30 rounded-2xl flex items-start space-x-3">
+                    <input 
+                      type="checkbox" 
+                      id="adjustBalance" 
+                      checked={backAdjustBalance}
+                      onChange={(e) => setBackAdjustBalance(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-blue-600 bg-slate-950 border-slate-850 rounded focus:ring-blue-500 focus:ring-offset-slate-900 focus:ring-2 pointer-events-auto"
+                    />
+                    <div className="space-y-1">
+                      <label htmlFor="adjustBalance" className="block text-xs font-bold text-white cursor-pointer select-none">
+                        Adjust Customer Portfolio Balance Account
+                      </label>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        If checked and status is "Approved", this entry will automatically increment (deposits) or debit (transfers, withdrawals, card payments) the user's active wallet balance matching accounting principles. Turn off to insert passive statement lines.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <button 
+                    type="submit" 
+                    disabled={backIsSubmitting}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white border border-blue-500 rounded-xl text-xs font-bold font-mono tracking-wider transition-all disabled:opacity-50 disabled:pointer-events-none uppercase cursor-pointer"
+                  >
+                    {backIsSubmitting ? "Processing Ledger Injection..." : "Commit Backup Entry"}
+                  </button>
+                </form>
+
+                {/* TARGET USER PORTFOLIO AUDIT RAIL SUMMARY */}
+                <div className="lg:col-span-4 bg-slate-900/30 border border-slate-900 p-6 rounded-3xl space-y-6 text-xs text-slate-400">
+                  <div className="border-b border-slate-900 pb-3 flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-mono font-bold text-slate-500">Live Member Dashboard</span>
+                    <Clock className="w-4 h-4 text-slate-600" />
+                  </div>
+
+                  {backSelectedUserId ? (
+                    (() => {
+                      const selUser = allUsers.find(u => u.userId === backSelectedUserId);
+                      const userTxs = allTransactions.filter(t => t.userId === backSelectedUserId);
+                      return selUser ? (
+                        <div className="space-y-5">
+                          <div className="flex items-center space-x-3 bg-slate-950/40 p-3.5 rounded-2xl border border-slate-900">
+                            <img 
+                              src={selUser.profileImage || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=120"} 
+                              alt={selUser.fullName}
+                              className="w-10 h-10 rounded-full border border-slate-850 object-cover"
+                            />
+                            <div>
+                              <h4 className="font-bold text-white uppercase">{selUser.fullName}</h4>
+                              <p className="text-[10px] text-slate-500 font-mono">{selUser.email}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between py-1.5 border-b border-slate-900">
+                              <span className="font-semibold text-slate-500">Account Number</span>
+                              <span className="font-mono text-slate-300 font-bold">{selUser.accountNumber}</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 border-b border-slate-900">
+                              <span className="font-semibold text-slate-500">Routing Number</span>
+                              <span className="font-mono text-slate-300 font-bold">{landingSettings.bankRoutingNumber || "021000021"}</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 border-b border-slate-900">
+                              <span className="font-semibold text-slate-500">Standard Balance</span>
+                              <span className="font-mono text-emerald-400 font-bold">${selUser.balance?.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 border-b border-slate-900">
+                              <span className="font-semibold text-slate-500">Total Registered Statements</span>
+                              <span className="font-mono text-blue-400 font-bold">{userTxs.length} items</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 border-b border-slate-900">
+                              <span className="font-semibold text-slate-500">Account Status</span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${selUser.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'}`}>
+                                {selUser.status}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()
+                  ) : (
+                    <div className="py-12 text-center text-slate-500 max-w-xs mx-auto">
+                      <p className="font-semibold uppercase tracking-wider text-[10px] mb-1">Portfolio Inactive</p>
+                      <p className="text-[10px] text-slate-600 leading-normal">Choose a registered customer on the form dropdown to view live accounts, balances, and statement statistics in real-time.</p>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* AUDIT BOARD: RECENT INJECTED TRANSACTIONS */}
+              <div className="bg-slate-900/30 border border-slate-900 p-6 sm:p-8 rounded-3xl space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-900 pb-3">
+                  <span className="text-xs uppercase text-slate-400 font-bold tracking-widest font-mono">Administrative Backup & Injected Transactions Auditor</span>
+                  <span className="bg-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-500 font-bold">
+                    {allTransactions.filter(t => t.id.startsWith("tx_back_")).length} Custom Audit Records
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left divide-y divide-slate-900/40">
+                    <thead>
+                      <tr className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+                        <th className="py-2.5 font-bold">Member</th>
+                        <th className="py-2.5 font-bold">Timestamp</th>
+                        <th className="py-2.5 font-bold">Type</th>
+                        <th className="py-2.5 font-bold">Amount</th>
+                        <th className="py-2.5 font-bold">Fee</th>
+                        <th className="py-2.5 font-bold">Particulars / Notes</th>
+                        <th className="py-2.5 font-bold text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900/30 font-medium text-slate-300">
+                      {allTransactions.filter(t => t.id.startsWith("tx_back_")).map((t) => {
+                        const mUser = allUsers.find(u => u.userId === t.userId);
+                        return (
+                          <tr key={t.id} className="hover:bg-slate-900/10">
+                            <td className="py-3 uppercase font-bold text-white truncate max-w-[150px]">
+                              {mUser?.fullName || "Discovered Member"}
+                            </td>
+                            <td className="py-3 font-mono text-[10px] text-slate-400">
+                              {new Date(t.createdAt).toLocaleString()}
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider font-mono ${
+                                t.type === 'deposit' 
+                                  ? 'bg-green-500/10 text-green-400' 
+                                  : t.type === 'card_payment'
+                                    ? 'bg-purple-500/10 text-purple-400'
+                                    : 'bg-red-500/10 text-red-450'
+                              }`}>
+                                {t.type.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 font-mono font-bold text-white font-semibold">
+                              ${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 font-mono text-slate-400">
+                              ${t.fee?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || "0.00"}
+                            </td>
+                            <td className="py-3 text-slate-450 max-w-[200px] truncate leading-normal italic font-semibold">
+                              {t.notes}
+                            </td>
+                            <td className="py-3 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase font-mono ${
+                                t.status === 'approved' 
+                                  ? 'bg-blue-600/25 text-blue-450' 
+                                  : t.status === 'pending'
+                                    ? 'bg-amber-500/10 text-amber-500'
+                                    : 'bg-red-500/10 text-red-500'
+                              }`}>
+                                {t.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {allTransactions.filter(t => t.id.startsWith("tx_back_")).length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="text-center py-8 text-slate-550 italic font-medium">
+                            No backup ledger transactions injected via this console yet. Use the form above to add customized statements.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
             </div>
           )}
 

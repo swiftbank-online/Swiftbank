@@ -33,7 +33,7 @@ export interface UserProfile {
 export interface Transaction {
   id: string;
   userId: string;
-  type: 'deposit' | 'withdrawal' | 'local_transfer' | 'intl_transfer';
+  type: 'deposit' | 'withdrawal' | 'local_transfer' | 'intl_transfer' | 'card_payment';
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
   fee?: number;

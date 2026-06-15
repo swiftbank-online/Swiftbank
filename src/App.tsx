@@ -44,7 +44,7 @@ export default function App() {
               window.dispatchEvent(new PopStateEvent('popstate'));
               return;
             }
-            dbService.setupListeners(profileData.userId, profileData.isAdmin);
+            dbService.setupListeners(firebaseUser.uid, profileData.isAdmin);
             setUser(profileData);
             localStorage.setItem('swift_logged_in', 'true');
             if (profileData.isAdmin) {

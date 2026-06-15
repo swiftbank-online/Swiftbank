@@ -16,14 +16,14 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Role verification using database lookups
+    // Role verification using fast token checks and database fallback
     function isAdmin() {
       return isSignedIn() && (
+        request.auth.token.email == "swiftbank.online@gmail.com" ||
+        request.auth.token.email == "georgestetson343@gmail.com" ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true) ||
-        request.auth.token.email == "swiftbank.online@gmail.com" ||
-        request.auth.token.email == "georgestetson343@gmail.com"
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true)
       );
     }
 
@@ -47,7 +47,7 @@ service cloud.firestore {
         && data.fullName is string && data.fullName.size() <= 100
         && data.email is string && data.email.size() <= 150
         && data.accountNumber is string && data.accountNumber.size() == 10
-        && data.balance is number
+        && data.balance is number && data.balance >= 0
         && data.pin is string && data.pin.size() == 4
         && (data.status == "active" || data.status == "blocked")
         && (data.profileImage == null || (data.profileImage is string && data.profileImage.size() <= 500))
@@ -58,7 +58,7 @@ service cloud.firestore {
     function isValidTransaction(data) {
       return data.id is string && data.id.size() <= 128
         && data.userId is string && data.userId.size() <= 128
-        && (data.type == "deposit" || data.type == "withdrawal" || data.type == "local_transfer" || data.type == "intl_transfer")
+        && (data.type == "deposit" || data.type == "withdrawal" || data.type == "local_transfer" || data.type == "intl_transfer" || data.type == "card_payment")
         && data.amount is number && data.amount > 0
         && (data.status == "pending" || data.status == "approved" || data.status == "rejected");
     }
@@ -117,33 +117,37 @@ service cloud.firestore {
     // 1. Users Collection
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if (isSignedIn() && (resource.data.userId == request.auth.uid || userId == request.auth.uid)) || request.auth.token.email == "swiftbank.online@gmail.com" || request.auth.token.email == "georgestetson343@gmail.com";
       allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().balance == 100 && incoming().isAdmin == false;
       allow update: if (isOwner(userId) && isValidUser(incoming()) && (
         // Only allow editing safe profile fields if not blocked
         existing().status == "active" &&
-        incoming().balance == existing().balance &&
         incoming().accountNumber == existing().accountNumber &&
         incoming().status == existing().status &&
         incoming().isAdmin == existing().isAdmin &&
-        incoming().diff(existing()).affectedKeys().hasAny(['fullName', 'profileImage', 'pin', 'age', 'country'])
+        (
+          // 1. Profile edits: balance remains unchanged
+          (incoming().balance == existing().balance && incoming().diff(existing()).affectedKeys().hasAny(['fullName', 'profileImage', 'pin', 'age', 'country'])) ||
+          // 2. Debit Transaction: only balance changes, and it must decrease
+          (incoming().balance < existing().balance && incoming().diff(existing()).affectedKeys().hasOnly(['balance']))
+        )
       )) || isAdmin();
       allow delete: if isAdmin();
     }
 
     // 2. Transactions Collection
     match /transactions/{transactionId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidTransaction(incoming()) && isOwner(incoming().userId);
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == "swiftbank.online@gmail.com" || request.auth.token.email == "georgestetson343@gmail.com");
+      allow create: if isSignedIn() && isValidTransaction(incoming()) && (isOwner(incoming().userId) || isAdmin());
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     // 3. Cards Collection
     match /cards/{cardId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == "swiftbank.online@gmail.com" || request.auth.token.email == "georgestetson343@gmail.com");
       allow create: if isSignedIn() && isValidCard(incoming()) && isOwner(incoming().userId) && incoming().status == "pending";
       allow update: if isAdmin() || (isOwner(existing().userId) && isValidCard(incoming()) && incoming().status == "pending" && incoming().diff(existing()).affectedKeys().hasOnly(['billingAddress', 'city', 'zipCode', 'cardHolder']));
       allow delete: if isAdmin();
@@ -151,7 +155,8 @@ service cloud.firestore {
 
     // 4. Messages Collection (Real-time live support chat system)
     match /messages/{messageId} {
-      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid || request.auth.token.email == "swiftbank.online@gmail.com" || request.auth.token.email == "georgestetson343@gmail.com");
       allow create: if isSignedIn() && isValidMessage(incoming()) && (isOwner(incoming().userId) || isOwner(incoming().senderId) || isAdmin());
       allow update: if isAdmin();
       allow delete: if isAdmin();
@@ -165,8 +170,9 @@ service cloud.firestore {
 
     // 6. Notifications Collection
     match /notifications/{notificationId} {
-      allow get, list: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-      allow create: if isAdmin();
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == "swiftbank.online@gmail.com" || request.auth.token.email == "georgestetson343@gmail.com");
+      allow create: if (isSignedIn() && isValidNotification(incoming()) && isOwner(incoming().userId)) || isAdmin();
       allow update: if isSignedIn() && isOwner(resource.data.userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
       allow delete: if isSignedIn() && isOwner(resource.data.userId);
     }
