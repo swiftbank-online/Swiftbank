@@ -630,8 +630,8 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                     <tbody className="divide-y divide-slate-900">
                       {allUsers.slice(0, 4).map(user => (
                         <tr key={user.userId}>
-                          <td className="px-6 py-3.5 font-bold text-white">{user.fullName}</td>
-                          <td className="px-6 py-3.5 font-semibold text-slate-400">{user.email}</td>
+                          <td className="px-6 py-3.5 font-bold text-white max-w-[150px] truncate" title={user.fullName}>{user.fullName}</td>
+                          <td className="px-6 py-3.5 font-semibold text-slate-400 max-w-[180px] truncate" title={user.email}>{user.email}</td>
                           <td className="px-6 py-3.5 font-mono select-all text-slate-300">{user.accountNumber}</td>
                           <td className="px-6 py-3.5 text-slate-550">{new Date(user.createdAt).toLocaleDateString()}</td>
                           <td className="px-6 py-3.5 text-right font-bold text-emerald-400 font-mono">${user.balance.toFixed(2)}</td>
@@ -656,11 +656,15 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                 {allTransactions.filter(t => t.type === 'deposit').map(tx => {
                   const txUserObj = allUsers.find(u => u.userId === tx.userId);
                   return (
-                    <div key={tx.id} className="p-5.5 bg-slate-900/60 border border-slate-900 rounded-2xl flex justify-between items-center">
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">CODE: <span className="text-white font-mono select-all">{tx.id}</span></p>
-                        <p className="text-sm font-bold text-white tracking-tight uppercase">User: {txUserObj?.fullName || "Unregistered"} ({txUserObj?.email})</p>
-                        <p className="text-xs text-slate-400 font-medium font-semibold text-slate-400 font-medium">Notes: "{tx.notes || "None supplied"}" • {new Date(tx.createdAt).toLocaleString()}</p>
+                    <div key={tx.id} className="p-5.5 bg-slate-900/60 border border-slate-900 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1 min-w-0 flex-1 w-full text-left">
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider truncate">CODE: <span className="text-white font-mono select-all">{tx.id}</span></p>
+                        <p className="text-sm font-bold text-white tracking-tight uppercase truncate" title={`${txUserObj?.fullName || "Unregistered"} (${txUserObj?.email})`}>
+                          User: {txUserObj?.fullName || "Unregistered"} ({txUserObj?.email})
+                        </p>
+                        <p className="text-xs text-slate-400 font-medium font-semibold text-slate-400 font-medium truncate" title={tx.notes || "None supplied"}>
+                          Notes: "{tx.notes || "None supplied"}" • {new Date(tx.createdAt).toLocaleString()}
+                        </p>
                       </div>
 
                       {tx.status === 'pending' ? (
@@ -707,14 +711,18 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                 {allTransactions.filter(t => t.type === 'intl_transfer').map(tx => {
                   const txUserObj = allUsers.find(u => u.userId === tx.userId);
                   return (
-                    <div key={tx.id} className="p-5 bg-slate-900/60 border border-slate-900 rounded-2xl flex justify-between items-center">
-                      <div className="space-y-1">
+                    <div key={tx.id} className="p-5 bg-slate-900/60 border border-slate-900 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1 min-w-0 flex-1 w-full text-left">
                         <div className="flex items-center space-x-2">
-                          <span className="px-2 py-0.5 rounded bg-blue-600/10 text-blue-500 text-[9px] uppercase font-bold tracking-widest">{tx.intlMethod}</span>
-                          <span className="text-[10px] text-slate-500 font-mono font-bold select-all uppercase">ID: {tx.id}</span>
+                          <span className="px-2 py-0.5 rounded bg-blue-600/10 text-blue-500 text-[9px] uppercase font-bold tracking-widest shrink-0">{tx.intlMethod}</span>
+                          <span className="text-[10px] text-slate-500 font-mono font-bold select-all uppercase truncate">ID: {tx.id}</span>
                         </div>
-                        <p className="text-sm font-bold text-white uppercase mt-1">Recipient: "{tx.recipientName}" • Customer: {txUserObj?.fullName}</p>
-                        <p className="text-xs text-slate-400 font-semibold">Amount: <span className="text-white font-semibold font-mono">${tx.amount.toFixed(2)}</span> • Memo: "{tx.notes || "None"}" • {new Date(tx.createdAt).toLocaleString()}</p>
+                        <p className="text-sm font-bold text-white uppercase mt-1 truncate" title={`Recipient: "${tx.recipientName}" • Customer: ${txUserObj?.fullName}`}>
+                          Recipient: "{tx.recipientName}" • Customer: {txUserObj?.fullName}
+                        </p>
+                        <p className="text-xs text-slate-400 font-semibold truncate" title={`Amount: $${tx.amount.toFixed(2)} • Memo: "${tx.notes || "None"}"`}>
+                          Amount: <span className="text-white font-semibold font-mono">${tx.amount.toFixed(2)}</span> • Memo: "{tx.notes || "None"}" • {new Date(tx.createdAt).toLocaleString()}
+                        </p>
                       </div>
 
                       {tx.status === 'pending' ? (
@@ -835,14 +843,18 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                 {allCards.map(card => {
                   const cardUserObj = allUsers.find(u => u.userId === card.userId);
                   return (
-                    <div key={card.id} className="p-5.5 bg-slate-900/60 border border-slate-900 rounded-2xl flex justify-between items-center">
-                      <div className="space-y-2">
+                    <div key={card.id} className="p-5.5 bg-slate-900/60 border border-slate-900 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-2 min-w-0 flex-1 w-full text-left">
                         <div className="flex items-center space-x-2">
-                          <span className="px-2 py-0.5 rounded bg-blue-600/10 text-blue-500 text-[9px] uppercase font-bold tracking-widest">{card.brand}</span>
-                          <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">CODE: {card.id}</span>
+                          <span className="px-2 py-0.5 rounded bg-blue-600/10 text-blue-500 text-[9px] uppercase font-bold tracking-widest shrink-0">{card.brand}</span>
+                          <span className="text-[10px] text-slate-500 font-bold uppercase font-mono truncate">CODE: {card.id}</span>
                         </div>
-                        <p className="text-sm font-bold text-white uppercase">Applicant: {cardUserObj?.fullName} • Address: "{card.billingAddress}, {card.city}, {card.zipCode}"</p>
-                        <p className="text-xs text-slate-400 font-semibold">Max Daily Limit: <span className="text-white font-mono">${card.dailyLimit.toLocaleString()} USD</span> • Status: <span className="uppercase text-slate-350">{card.status}</span> • Request Date: {new Date(card.createdAt).toLocaleDateString()}</p>
+                        <p className="text-sm font-bold text-white uppercase truncate" title={`Applicant: ${cardUserObj?.fullName} • Address: "${card.billingAddress}, ${card.city}, ${card.zipCode}"`}>
+                          Applicant: {cardUserObj?.fullName} • Address: "{card.billingAddress}, {card.city}, {card.zipCode}"
+                        </p>
+                        <p className="text-xs text-slate-400 font-semibold truncate" title={`Max Daily Limit: $${card.dailyLimit.toLocaleString()} USD • Status: ${card.status}`}>
+                          Max Daily Limit: <span className="text-white font-mono">${card.dailyLimit.toLocaleString()} USD</span> • Status: <span className="uppercase text-slate-350">{card.status}</span> • Request Date: {new Date(card.createdAt).toLocaleDateString()}
+                        </p>
                       </div>
 
                       {card.status === 'pending' ? (
@@ -1308,13 +1320,13 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                         <div 
                           key={tkt.userId}
                           onClick={() => setSelectedChatUserId(tkt.userId)}
-                          className={`p-4 flex items-start justify-between cursor-pointer text-left transition-colors hover:bg-slate-900/25 ${isActive ? 'bg-blue-950/20' : ''}`}
+                          className={`p-4 flex items-start justify-between gap-3 cursor-pointer text-left transition-colors hover:bg-slate-900/25 ${isActive ? 'bg-blue-950/20' : ''}`}
                         >
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-bold text-white uppercase">{tkt.userName}</p>
-                            <p className="text-[10px] text-slate-500 font-medium truncate max-w-[200px]">{tkt.lastMessageText}</p>
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <p className="text-xs font-bold text-white uppercase truncate" title={tkt.userName}>{tkt.userName}</p>
+                            <p className="text-[10px] text-slate-500 font-medium truncate" title={tkt.lastMessageText}>{tkt.lastMessageText}</p>
                           </div>
-                          <div className="flex flex-col items-end space-y-1">
+                          <div className="flex flex-col items-end space-y-1 shrink-0">
                             {tkt.unreadCount > 0 && (
                               <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-[9px] font-bold text-white animate-bounce">{tkt.unreadCount}</span>
                             )}
@@ -1354,7 +1366,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                           return (
                             <div key={mObj.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                               <span className="text-[8px] text-slate-500 mb-0.5 font-mono px-1">{mObj.senderName}</span>
-                              <div className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-100 rounded-tl-none'}`}>
+                              <div className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs break-words whitespace-pre-wrap ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-100 rounded-tl-none'}`}>
                                 {mObj.text}
                               </div>
                             </div>

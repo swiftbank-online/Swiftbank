@@ -140,7 +140,7 @@ export default function LiveSupportWidget({ userId, userName }: LiveSupportWidge
                     {msg.senderName} • {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   <div 
-                    className={`max-w-[85%] rounded-xl px-3.5 py-2 text-xs leading-relaxed ${
+                    className={`max-w-[85%] rounded-xl px-3.5 py-2 text-xs leading-relaxed break-words whitespace-pre-wrap ${
                       isAdminMsg 
                         ? 'bg-slate-800 text-slate-100 rounded-tl-none' 
                         : 'bg-blue-600 text-white rounded-tr-none'

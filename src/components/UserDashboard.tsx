@@ -830,8 +830,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                           onClick={() => { dbService.markNotificationAsRead(notif.id); syncDashboardData(); }}
                           className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${notif.read ? 'opacity-55 bg-transparent border-transparent' : 'bg-blue-950/20 border-blue-900/30'}`}
                         >
-                          <p className="text-xs font-bold text-white mb-0.5">{notif.title}</p>
-                          <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">{notif.message}</p>
+                          <p className="text-xs font-bold text-white mb-0.5 break-words">{notif.title}</p>
+                          <p className="text-[10px] text-slate-400 leading-relaxed font-semibold break-words whitespace-pre-wrap">{notif.message}</p>
                           <span className="text-[8px] text-slate-500 block text-right font-mono mt-1">{new Date(notif.createdAt).toLocaleDateString()}</span>
                         </div>
                       ))
@@ -1159,10 +1159,10 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     <tr key={tx.id} className="hover:bg-slate-900/30">
                       <td className="px-6 py-4 font-mono font-bold text-slate-400 select-all uppercase">{tx.id}</td>
                       <td className="px-6 py-4 font-medium text-slate-500">{new Date(tx.createdAt).toLocaleString()}</td>
-                      <td className="px-6 py-4">
-                        <p className="font-bold text-white uppercase">{tx.notes || tx.type.replace('_', ' ')}</p>
+                      <td className="px-6 py-4 max-w-[240px] min-w-0">
+                        <p className="font-bold text-white uppercase truncate" title={tx.notes || tx.type.replace('_', ' ')}>{tx.notes || tx.type.replace('_', ' ')}</p>
                         {tx.recipientName && (
-                          <p className="text-[10px] text-slate-500 font-mono">Recipient Account: {tx.recipientAccount || tx.recipientName}</p>
+                          <p className="text-[10px] text-slate-500 font-mono truncate" title={tx.recipientAccount || tx.recipientName}>Recipient Account: {tx.recipientAccount || tx.recipientName}</p>
                         )}
                       </td>
                       <td className="px-6 py-4">
