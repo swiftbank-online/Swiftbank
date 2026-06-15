@@ -1060,18 +1060,20 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
               <div className="space-y-3">
                 {transactions.slice(0, 4).map((tx) => (
-                  <div key={tx.id} className="p-3 bg-slate-950/40 rounded-xl border border-slate-900/50 flex justify-between items-center">
-                    <div className="flex items-center space-x-3.5">
-                      <div className={`p-2 rounded-lg ${isIncomingTransaction(tx) ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  <div key={tx.id} className="p-3 bg-slate-950/40 rounded-xl border border-slate-900/50 flex justify-between items-center gap-3">
+                    <div className="flex items-center space-x-3.5 min-w-0 flex-1">
+                      <div className={`p-2 rounded-lg shrink-0 ${isIncomingTransaction(tx) ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
                         {isIncomingTransaction(tx) ? <TrendingUp className="w-4.5 h-4.5" /> : <TrendingDown className="w-4.5 h-4.5" />}
                       </div>
-                      <div>
-                        <p className="text-xs font-bold text-white uppercase">{tx.notes || tx.type.replace('_', ' ')}</p>
-                        <p className="text-[9px] text-slate-500 font-mono">{new Date(tx.createdAt).toLocaleString()}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-white uppercase truncate" title={tx.notes || tx.type.replace('_', ' ')}>
+                          {tx.notes || tx.type.replace('_', ' ')}
+                        </p>
+                        <p className="text-[9px] text-slate-500 font-mono truncate">{new Date(tx.createdAt).toLocaleString()}</p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3 text-right">
-                      <div className="text-right">
+                    <div className="flex items-center space-x-2.5 shrink-0 text-right">
+                      <div className="text-right shrink-0">
                         <p className={`text-xs font-bold font-mono ${isIncomingTransaction(tx) ? 'text-green-400' : 'text-red-400'}`}>
                           {isIncomingTransaction(tx) ? '+' : '-'}${tx.amount.toFixed(2)}
                         </p>
@@ -1085,7 +1087,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                         type="button"
                         onClick={() => setReceiptTransaction(tx)}
                         title="View Official Remittance Receipt"
-                        className="p-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-blue-600 border border-slate-850 hover:border-blue-500 hover:text-white text-[9px] text-slate-400 transition-all font-bold cursor-pointer"
+                        className="p-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-blue-600 border border-slate-850 hover:border-blue-500 hover:text-white text-[9px] text-slate-400 transition-all font-bold cursor-pointer shrink-0"
                       >
                         Receipt
                       </button>
@@ -1225,12 +1227,12 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                     </span>
                   </div>
 
-                  <div className="space-y-1">
-                    <p className="font-bold text-white uppercase text-xs break-words">{tx.notes || tx.type.replace('_', ' ')}</p>
+                  <div className="space-y-1 min-w-0">
+                    <p className="font-bold text-white uppercase text-xs truncate" title={tx.notes || tx.type.replace('_', ' ')}>{tx.notes || tx.type.replace('_', ' ')}</p>
                     {tx.recipientName && (
-                      <p className="text-[10px] text-slate-400 font-mono leading-none">Recipient: {tx.recipientAccount || tx.recipientName}</p>
+                      <p className="text-[10px] text-slate-400 font-mono leading-none truncate" title={tx.recipientAccount || tx.recipientName}>Recipient: {tx.recipientAccount || tx.recipientName}</p>
                     )}
-                    <p className="text-[10px] text-slate-500 font-medium">{new Date(tx.createdAt).toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-500 font-medium truncate">{new Date(tx.createdAt).toLocaleString()}</p>
                   </div>
 
                   <div className="flex justify-between items-center pt-3 border-t border-slate-950/40">
@@ -2420,12 +2422,16 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                                 return (
                                   <div className="divide-y divide-slate-900/40 text-xs text-left">
                                     {cardTxList.map((tx) => (
-                                      <div key={tx.id} className="py-2.5 flex justify-between items-center hover:bg-slate-900/10 transition-colors">
-                                        <div className="space-y-0.5">
-                                          <p className="font-bold text-white uppercase text-[11px]">{tx.notes || tx.type.replace('_', ' ')}</p>
-                                          <p className="text-[9px] text-slate-550 font-semibold font-mono">{new Date(tx.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} • {tx.status.toUpperCase()}</p>
+                                      <div key={tx.id} className="py-2.5 flex justify-between items-center hover:bg-slate-900/10 transition-colors gap-2">
+                                        <div className="space-y-0.5 min-w-0 flex-1">
+                                          <p className="font-bold text-white uppercase text-[11px] truncate" title={tx.notes || tx.type.replace('_', ' ')}>
+                                            {tx.notes || tx.type.replace('_', ' ')}
+                                          </p>
+                                          <p className="text-[9px] text-slate-550 font-semibold font-mono truncate">
+                                            {new Date(tx.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} • {tx.status.toUpperCase()}
+                                          </p>
                                         </div>
-                                        <span className="text-red-400 font-mono font-bold">-${tx.amount.toLocaleString([], { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-red-400 font-mono font-bold shrink-0">-${tx.amount.toLocaleString([], { minimumFractionDigits: 2 })}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -3370,17 +3376,17 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
               {/* Receipt Info Fields */}
               <div className="space-y-3.5 text-xs">
-                <div className="flex justify-between items-center text-slate-400 font-semibold">
-                  <span>Remittance Standard Date</span>
-                  <span className="text-slate-100 font-mono font-bold">{new Date(receiptTransaction.createdAt).toLocaleString()}</span>
+                <div className="flex justify-between items-center text-slate-400 font-semibold gap-3">
+                  <span className="shrink-0">Remittance Standard Date</span>
+                  <span className="text-slate-100 font-mono font-bold text-right truncate">{new Date(receiptTransaction.createdAt).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-400 font-semibold">
-                  <span>Remittance Type</span>
-                  <span className="text-slate-100 uppercase font-bold">{receiptTransaction.type.replace('_', ' ')}</span>
+                <div className="flex justify-between items-center text-slate-400 font-semibold gap-3">
+                  <span className="shrink-0">Remittance Type</span>
+                  <span className="text-slate-100 uppercase font-bold text-right truncate max-w-[180px]">{receiptTransaction.type.replace('_', ' ')}</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-400 font-semibold">
+                <div className="flex justify-between items-center text-slate-400 font-semibold gap-3">
                   <span>Electronic Status</span>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ${
                     receiptTransaction.status === 'approved' 
                       ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
                       : receiptTransaction.status === 'rejected' 
@@ -3396,17 +3402,25 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-850 space-y-3.5">
                 <div className="space-y-1.5 text-left border-b border-slate-850/50 pb-2.5">
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Originator (Debited Account)</div>
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-100 font-bold">{receiptTransaction.senderName || profile.fullName}</span>
-                    <span className="text-slate-400 font-mono font-sans font-bold">****{profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}</span>
+                  <div className="flex justify-between items-center text-xs font-semibold gap-2">
+                    <span className="text-slate-100 font-bold truncate max-w-[200px]" title={receiptTransaction.senderName || profile.fullName}>
+                      {receiptTransaction.senderName || profile.fullName}
+                    </span>
+                    <span className="text-slate-400 font-mono font-sans font-bold shrink-0">
+                      ****{profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}
+                    </span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5 text-left">
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Beneficiary (Credited Account)</div>
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-100 font-bold">{receiptTransaction.recipientName || 'External Global Transit Remittance'}</span>
-                    <span className="text-slate-400 font-mono font-bold select-all font-sans">{receiptTransaction.recipientAccount || 'System Endpoint Remittance'}</span>
+                  <div className="flex justify-between items-center text-xs font-semibold gap-2">
+                    <span className="text-slate-100 font-bold truncate max-w-[160px]" title={receiptTransaction.recipientName || 'External Global Transit Remittance'}>
+                      {receiptTransaction.recipientName || 'External Global Transit Remittance'}
+                    </span>
+                    <span className="text-slate-400 font-mono font-bold select-all font-sans truncate text-right max-w-[140px]" title={receiptTransaction.recipientAccount || 'System Endpoint Remittance'}>
+                      {receiptTransaction.recipientAccount || 'System Endpoint Remittance'}
+                    </span>
                   </div>
                 </div>
               </div>
