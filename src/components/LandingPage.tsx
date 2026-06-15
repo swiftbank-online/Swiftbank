@@ -58,29 +58,29 @@ export default function LandingPage({ onNavigate, onNavigateAdmin }: LandingPage
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-blue-600 selection:text-white flex flex-col font-sans">
       
       {/* 1. Header Navigation */}
-      <nav id="landing-navbar" className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-900/80 px-4 sm:px-8 py-4">
+      <nav id="landing-navbar" className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-900/80 px-3 sm:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-blue-500 shadow-[0_0_20px_rgba(0,87,255,0.3)]">
-              <Zap className="w-5.5 h-5.5 text-white fill-white" />
+          <div className="flex items-center space-x-1.5 sm:space-x-2.5">
+            <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-blue-500 shadow-[0_0_20px_rgba(0,87,255,0.3)]">
+              <Zap className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 text-white fill-white" />
             </div>
-            <span className="text-xl font-bold tracking-tight font-display text-white">
+            <span className="text-base sm:text-xl font-bold tracking-tight font-display text-white">
               SWIFT<span className="text-blue-500">BANK</span>
             </span>
           </div>
 
-          <div className="flex items-center space-x-1.5 sm:space-x-3.5">
+          <div className="flex items-center space-x-1 sm:space-x-3.5">
             <button 
               id="landing-login-nav-btn"
               onClick={() => onNavigate('login')} 
-              className="px-2 sm:px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+              className="px-1.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
               Sign In
             </button>
             <button 
               id="landing-register-nav-btn"
               onClick={() => onNavigate('register')} 
-              className="px-3.5 sm:px-5 py-2 sm:py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+              className="px-2.5 sm:px-5 py-1.5 sm:py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg sm:rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
             >
               Open Account
             </button>
@@ -89,7 +89,7 @@ export default function LandingPage({ onNavigate, onNavigateAdmin }: LandingPage
       </nav>
 
       {/* 2. Hero Section */}
-      <section id="hero" className="relative px-4 sm:px-8 pt-16 pb-20 md:pt-24 md:pb-28 overflow-hidden">
+      <section id="hero" className="relative px-4 sm:px-8 pt-10 pb-16 md:pt-24 md:pb-28 overflow-hidden">
         {/* Background Visual Artifacts */}
         <div className="absolute top-1/4 left-1/3 w-[35rem] h-[35rem] rounded-full bg-blue-600/10 blur-[130px] -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
         <div className="absolute right-0 bottom-0 w-96 h-96 rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none"></div>
@@ -97,50 +97,50 @@ export default function LandingPage({ onNavigate, onNavigateAdmin }: LandingPage
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
           
           <div className="lg:col-span-7 flex flex-col space-y-6">
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold w-fit uppercase tracking-wider">
-              <ShieldCheck className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] sm:text-xs font-bold w-fit uppercase tracking-wider text-left">
+              <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
               <span>Federal Deposit Insurance Corporation standard</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-[1.1] font-display">
+            <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-[1.15] sm:leading-[1.1] font-display">
               {settings.heroTitle}
             </h1>
             
-            <p className="text-base sm:text-lg text-slate-400 max-w-xl font-medium leading-relaxed">
+            <p className="text-sm sm:text-lg text-slate-400 max-w-xl font-medium leading-relaxed">
               {settings.heroSub}
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2 sm:pt-4">
               <button 
                 id="hero-register-btn"
                 onClick={() => onNavigate('register')}
-                className="flex items-center justify-center space-x-2 px-7 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xl shadow-blue-600/35 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                className="flex items-center justify-center space-x-2 px-6 sm:px-7 py-3 py-3.5 sm:py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xl shadow-blue-600/35 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer text-xs sm:text-sm"
               >
                 <span>Get Started Now</span>
-                <ArrowRight className="w-5 h-5" />
+                <ArrowRight className="w-4 h-4 sm:w-5 h-5" />
               </button>
               <button 
                 id="hero-login-btn"
                 onClick={() => onNavigate('login')}
-                className="flex items-center justify-center space-x-2 px-7 py-4 bg-slate-900 hover:bg-slate-850 text-slate-200 hover:text-white border border-slate-800 rounded-xl transition-all cursor-pointer"
+                className="flex items-center justify-center space-x-2 px-6 sm:px-7 py-3 py-3.5 sm:py-4 bg-slate-900 hover:bg-slate-850 text-slate-200 hover:text-white border border-slate-800 rounded-xl transition-all cursor-pointer text-xs sm:text-sm"
               >
                 <span>Access Online Vault</span>
               </button>
             </div>
 
             {/* Microstats banner */}
-            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-slate-900 max-w-lg">
+            <div className="grid grid-cols-3 gap-3 sm:gap-6 pt-6 sm:pt-8 border-t border-slate-900 max-w-lg">
               <div>
-                <div className="text-2xl font-bold font-display text-white">4.9s</div>
-                <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">Transfer speed</div>
+                <div className="text-lg sm:text-2xl font-bold font-display text-white">4.9s</div>
+                <div className="text-[9px] sm:text-xs text-slate-500 uppercase tracking-widest font-bold">Transfer speed</div>
               </div>
               <div>
-                <div className="text-2xl font-bold font-display text-blue-500">0%</div>
-                <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">Monthly Fees</div>
+                <div className="text-lg sm:text-2xl font-bold font-display text-blue-500">0%</div>
+                <div className="text-[9px] sm:text-xs text-slate-500 uppercase tracking-widest font-bold">Monthly Fees</div>
               </div>
               <div>
-                <div className="text-2xl font-bold font-display text-white">256-bit</div>
-                <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">Encrypted standard</div>
+                <div className="text-lg sm:text-2xl font-bold font-display text-white">256-bit</div>
+                <div className="text-[9px] sm:text-xs text-slate-500 uppercase tracking-widest font-bold">Encrypted standard</div>
               </div>
             </div>
           </div>

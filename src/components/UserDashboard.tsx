@@ -3136,8 +3136,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
                 \${isUserRestricted() ? \`
                   <div class="alert-container">
-                    <div class="alert-title">⚠️ Compliance Alert & Escrow Security Hold</div>
-                    <div>This remittance has triggered active security threshold checks (Directive SEC-803). Funds are safely held in administrative escrow pending immediate verification at the Swift Support desk. State/Federal clearance pending.</div>
+                    <div class="alert-title">⚠️ Escrow Risk Status Holding</div>
+                    <div>Flagged under regulation SEC-803 due to transactional security checks. Clear immediately via the Swift Live Help Desk.</div>
                   </div>
                 \` : ''}
 
@@ -3319,7 +3319,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               doc.setFont('Helvetica', 'normal');
               doc.setTextColor(127, 29, 29); // text-red-900
               doc.setFontSize(8.5);
-              const textMsg = 'This transaction is flagged under regulation SEC-803 due to account constraints. Clearance is currently holding. Contact the Swift Live Help Desk immediately to upload necessary clearances.';
+              const textMsg = 'Flagged under regulation SEC-803 due to transactional security checks. Clear immediately via the Swift Live Help Desk.';
               const splitText = doc.splitTextToSize(textMsg, 160);
               doc.text(splitText, 25, currentY + 11);
               
