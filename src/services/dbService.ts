@@ -461,7 +461,10 @@ class DBService {
     try {
       const resp = await fetch(`/api/lookup-account/${accountNumber}`);
       if (resp.ok) {
-        return await resp.json() as UserProfile;
+        const contentType = resp.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return await resp.json() as UserProfile;
+        }
       }
     } catch (e) {
       console.warn("Backend secure lookup unavailable, using client public_profiles fallback:", e);
@@ -511,14 +514,28 @@ class DBService {
         })
       });
 
-      reachedBackend = true;
+      const contentType = resp.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+
       if (resp.ok) {
-        const res = await resp.json();
-        return res.transaction as Transaction;
+        if (isJson) {
+          reachedBackend = true;
+          const res = await resp.json();
+          return res.transaction as Transaction;
+        } else {
+          // If the server returns 200 but it's HTML (Vercel wildcard redirect/SPA fallback)
+          throw new Error("Backend returned static SPA asset instead of JSON.");
+        }
       } else {
-        const errorData = await resp.json();
-        backendErrorMsg = errorData.error || "Dynamic wire transfer processor failed.";
-        throw new Error(backendErrorMsg);
+        if (isJson) {
+          reachedBackend = true;
+          const errorData = await resp.json();
+          backendErrorMsg = errorData.error || "Dynamic wire transfer processor failed.";
+          throw new Error(backendErrorMsg);
+        } else {
+          // Server error returning HTML/Text
+          throw new Error(`Server returned status ${resp.status} with non-JSON format.`);
+        }
       }
     } catch (err: any) {
       if (reachedBackend) {
