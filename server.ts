@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -9,8 +8,19 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } f
 import { getFirestore, collection, doc, query, where, getDocs, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firestore";
 import fs from "fs";
 import * as adminModule from "firebase-admin";
-const admin = adminModule as any;
-import firebaseConfig from "./firebase-applet-config.json";
+
+const admin: any = (adminModule && (adminModule as any).default) || adminModule;
+
+// Safely load firebase configuration to prevent Node ESM JSON import errors
+let firebaseConfig: any = null;
+try {
+  const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  }
+} catch (e: any) {
+  console.error("Failed to read firebase-applet-config.json:", e.message);
+}
 
 dotenv.config();
 
@@ -490,6 +500,7 @@ app.get("/api/health", (req, res) => {
 // Boot logic for standalone execution
 async function boot() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
