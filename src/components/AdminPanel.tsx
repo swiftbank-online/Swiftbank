@@ -124,6 +124,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   const [adjAmount, setAdjAmount] = useState("");
   const [adjIsDeduct, setAdjIsDeduct] = useState(false);
   const [adjMemo, setAdjMemo] = useState("");
+  const [adjSenderName, setAdjSenderName] = useState("");
   const [adjSuccess, setAdjSuccess] = useState<string | null>(null);
   const [adjError, setAdjError] = useState<string | null>(null);
   const [adjIsSubmitting, setAdjIsSubmitting] = useState(false);
@@ -364,12 +365,14 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
         adjSelectedUserId,
         parsedAmount,
         adjIsDeduct,
-        adjMemo.trim()
+        adjMemo.trim(),
+        adjIsDeduct ? undefined : adjSenderName.trim()
       );
 
       setAdjSuccess(`Successfully modified user balance. ${adjIsDeduct ? 'Deducted' : 'Added'} $${parsedAmount.toFixed(2)} USD!`);
       setAdjAmount("");
       setAdjMemo("");
+      setAdjSenderName("");
       syncAdminState();
     } catch (err: any) {
       setAdjError(err.message || "Failed to adjust customer balance portfolio.");
@@ -1967,6 +1970,20 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                       />
                     </div>
                   </div>
+
+                  {/* Sender Name input field (only when crediting balance) */}
+                  {!adjIsDeduct && (
+                    <div className="space-y-2">
+                      <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">Sender Name (Visible to User)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Benjamin George, Federal Reserve, Swift Central Reserve"
+                        value={adjSenderName}
+                        onChange={(e) => setAdjSenderName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-600 font-medium"
+                      />
+                    </div>
+                  )}
 
                   {/* Memo note input field */}
                   <div className="space-y-2">

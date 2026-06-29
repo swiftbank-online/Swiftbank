@@ -3311,6 +3311,13 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             doc.setTextColor(darkNavy[0], darkNavy[1], darkNavy[2]);
             doc.text('PARTICIPANT DETAILS', 20, 86);
 
+            const isIncoming = isIncomingTransaction(tx);
+            const origName = isIncoming ? (tx.senderName || 'Swift Central Reserve') : (tx.senderName || profile.fullName);
+            const origAcc = isIncoming ? (tx.senderAccount || 'System Endpoint') : `****${profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}`;
+
+            const benefName = isIncoming ? (tx.recipientName || profile.fullName) : (tx.recipientName || 'External Global Transit Remittance');
+            const benefAcc = isIncoming ? (tx.recipientAccount || profile.accountNumber) : (tx.recipientAccount || 'System Endpoint Wire');
+
             // Sender labels
             doc.setFont('Helvetica', 'normal');
             doc.setFontSize(10);
@@ -3320,9 +3327,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
             doc.setFont('Helvetica', 'bold');
             doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
-            const sAcc = `****${profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}`;
-            doc.text(sAcc, 75, 94);
-            doc.text(tx.senderName || profile.fullName, 75, 100);
+            doc.text(origAcc, 75, 94);
+            doc.text(origName, 75, 100);
 
             // Recipient labels
             doc.setFont('Helvetica', 'normal');
@@ -3332,8 +3338,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
             doc.setFont('Helvetica', 'bold');
             doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
-            doc.text(tx.recipientAccount || 'System Endpoint Wire', 75, 108);
-            doc.text(tx.recipientName || 'External Routing Agent', 75, 114);
+            doc.text(benefAcc, 75, 108);
+            doc.text(benefName, 75, 114);
 
             // Separator
             doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
@@ -3465,11 +3471,19 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 <div className="space-y-1.5 text-left border-b border-slate-850/50 pb-2.5">
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Originator (Debited Account)</div>
                   <div className="flex justify-between items-center text-xs font-semibold gap-2">
-                    <span className="text-slate-100 font-bold truncate max-w-[200px]" title={receiptTransaction.senderName || profile.fullName}>
-                      {receiptTransaction.senderName || profile.fullName}
+                    <span className="text-slate-100 font-bold truncate max-w-[200px]" title={
+                      isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.senderName || 'Swift Central Reserve')
+                        : (receiptTransaction.senderName || profile.fullName)
+                    }>
+                      {isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.senderName || 'Swift Central Reserve')
+                        : (receiptTransaction.senderName || profile.fullName)}
                     </span>
                     <span className="text-slate-400 font-mono font-sans font-bold shrink-0">
-                      ****{profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}
+                      {isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.senderAccount ? `****${receiptTransaction.senderAccount.slice(-4)}` : 'System Endpoint')
+                        : `****${profile.accountNumber ? profile.accountNumber.slice(-4) : '3199'}`}
                     </span>
                   </div>
                 </div>
@@ -3477,11 +3491,23 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                 <div className="space-y-1.5 text-left">
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 font-sans">Beneficiary (Credited Account)</div>
                   <div className="flex justify-between items-center text-xs font-semibold gap-2">
-                    <span className="text-slate-100 font-bold truncate max-w-[160px]" title={receiptTransaction.recipientName || 'External Global Transit Remittance'}>
-                      {receiptTransaction.recipientName || 'External Global Transit Remittance'}
+                    <span className="text-slate-100 font-bold truncate max-w-[160px]" title={
+                      isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.recipientName || profile.fullName)
+                        : (receiptTransaction.recipientName || 'External Global Transit Remittance')
+                    }>
+                      {isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.recipientName || profile.fullName)
+                        : (receiptTransaction.recipientName || 'External Global Transit Remittance')}
                     </span>
-                    <span className="text-slate-400 font-mono font-bold select-all font-sans truncate text-right max-w-[140px]" title={receiptTransaction.recipientAccount || 'System Endpoint Remittance'}>
-                      {receiptTransaction.recipientAccount || 'System Endpoint Remittance'}
+                    <span className="text-slate-400 font-mono font-bold select-all font-sans truncate text-right max-w-[140px]" title={
+                      isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.recipientAccount || profile.accountNumber)
+                        : (receiptTransaction.recipientAccount || 'System Endpoint Remittance')
+                    }>
+                      {isIncomingTransaction(receiptTransaction)
+                        ? (receiptTransaction.recipientAccount || profile.accountNumber)
+                        : (receiptTransaction.recipientAccount || 'System Endpoint Remittance')}
                     </span>
                   </div>
                 </div>

@@ -404,7 +404,7 @@ class DBService {
     }
   }
 
-  public async adjustUserBalance(userId: string, amount: number, isDeduct: boolean, memo: string): Promise<void> {
+  public async adjustUserBalance(userId: string, amount: number, isDeduct: boolean, memo: string, senderName?: string): Promise<void> {
     const userDocRef = doc(db, 'users', userId);
     const txId = "tx_adj_" + Math.random().toString(36).substring(2, 9);
     
@@ -435,8 +435,8 @@ class DBService {
           amount: amount,
           status: 'approved',
           fee: 0,
-          senderName: isDeduct ? user.fullName : 'Swift Central Reserve',
-          recipientName: isDeduct ? 'Swift Central Reserve' : user.fullName,
+          senderName: isDeduct ? user.fullName : (senderName || 'Swift Central Reserve'),
+          recipientName: isDeduct ? (senderName || 'Swift Central Reserve') : user.fullName,
           notes: memo || (isDeduct ? "Manual Balance Debit" : "Manual Balance Credit"),
           createdAt: new Date().toISOString()
         };
