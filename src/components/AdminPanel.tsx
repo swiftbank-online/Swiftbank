@@ -474,6 +474,56 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     }
   };
 
+  // Determine if a user portfolio has any active restrictions (new or legacy)
+  const getIsUserRestricted = (user: UserProfile) => {
+    const userTransfers = allTransactions.filter(
+      t => t.userId === user.userId && (t.type === 'local_transfer' || t.type === 'intl_transfer')
+    );
+    const previousTransfersCount = userTransfers.length;
+
+    if (user.securityRestrictTransfers === true) {
+      if (user.securityTxLimit === undefined || user.securityTxLimit === null) {
+        return true;
+      }
+      if ((previousTransfersCount + 1) >= user.securityTxLimit) {
+        return true;
+      }
+    }
+
+    if (user.restrictActive === true) {
+      if (user.restrictTransferIndex === undefined || user.restrictTransferIndex === null) {
+        return true;
+      }
+      if ((previousTransfersCount + 1) >= user.restrictTransferIndex) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Lift all active restrictions instantly
+  const handleLiftAllRestrictions = async (userId: string) => {
+    try {
+      await dbService.updateUserProfile(userId, {
+        securityRestrictTransfers: false,
+        restrictActive: false,
+        restrictTransferIndex: 99999, // Set high index as redundant fail-safe
+        securityTxLimit: 99999 // Set high index as redundant fail-safe
+      });
+      setSecuritySuccess(true);
+      setTimeout(() => {
+        setSecuritySuccess(false);
+        if (selectedSecurityUser?.userId === userId) {
+          setSelectedSecurityUser(null);
+        }
+      }, 1500);
+      syncAdminState();
+    } catch (err) {
+      console.error("Failed to lift user restrictions:", err);
+    }
+  };
+
   // Handle initializing a user's security config in state
   const startSecurityEditing = (user: UserProfile) => {
     setSelectedSecurityUser(user);
@@ -491,7 +541,9 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     try {
       await dbService.updateUserProfile(selectedSecurityUser.userId, {
         securityRestrictTransfers,
+        restrictActive: securityRestrictTransfers, // Keep legacy restrictActive in sync
         securityTxLimit,
+        restrictTransferIndex: securityTxLimit, // Keep legacy index in sync
         securityWarningTitle,
         securityWarningMessage
       });
@@ -2040,23 +2092,45 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                               {u.accountNumber || "N/A"}
                             </td>
                             <td className="py-3">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                u.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'
-                              }`}>
-                                {u.status}
-                              </span>
+                              <div className="flex flex-col space-y-1">
+                                <span className={`w-max px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                  u.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'
+                                }`}>
+                                  {u.status}
+                                </span>
+                                {getIsUserRestricted(u) ? (
+                                  <span className="w-max px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-red-600/20 text-red-400 border border-red-900/30">
+                                    Restricted
+                                  </span>
+                                ) : (
+                                  <span className="w-max px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-950 text-slate-500">
+                                    No Limit
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 text-center">
-                              <button 
-                                onClick={() => startSecurityEditing(u)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all active:scale-95 cursor-pointer ${
-                                  selectedSecurityUser?.userId === u.userId 
-                                    ? 'bg-blue-600 text-white' 
-                                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-850'
-                                }`}
-                              >
-                                {selectedSecurityUser?.userId === u.userId ? 'Modifying' : 'Modify'}
-                              </button>
+                              <div className="flex items-center justify-center space-x-1.5">
+                                <button 
+                                  onClick={() => startSecurityEditing(u)}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all active:scale-95 cursor-pointer ${
+                                    selectedSecurityUser?.userId === u.userId 
+                                      ? 'bg-blue-600 text-white' 
+                                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-850'
+                                  }`}
+                                >
+                                  {selectedSecurityUser?.userId === u.userId ? 'Modifying' : 'Modify'}
+                                </button>
+                                {getIsUserRestricted(u) && (
+                                  <button 
+                                    onClick={() => handleLiftAllRestrictions(u.userId)}
+                                    className="px-2 py-1 text-[10px] font-bold bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg border border-emerald-900/30 transition-all active:scale-95 cursor-pointer"
+                                    title="Lift all restrictions"
+                                  >
+                                    Lift
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2139,6 +2213,16 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                           />
                         </div>
                       </div>
+
+                      {getIsUserRestricted(selectedSecurityUser) && (
+                        <button 
+                          type="button"
+                          onClick={() => handleLiftAllRestrictions(selectedSecurityUser.userId)}
+                          className="w-full py-2.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-400 hover:text-white font-bold rounded-xl text-[11px] active:scale-95 transition-all cursor-pointer"
+                        >
+                          Lift All Restrictions Immediately
+                        </button>
+                      )}
 
                       <button 
                         type="submit"

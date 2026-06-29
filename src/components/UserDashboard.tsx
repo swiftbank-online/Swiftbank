@@ -3415,8 +3415,8 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
         };
 
         return (
-          <div className="fixed inset-0 z-50 flex justify-center bg-black/85 p-4 overflow-y-auto">
-            <div className="w-full max-w-md bg-slate-900 border border-slate-850 rounded-3xl p-6 sm:p-8 text-slate-100 shadow-2xl space-y-6 relative animate-fade-in-up font-sans my-auto">
+          <div className="fixed inset-0 z-50 flex justify-center items-start bg-black/85 p-4 sm:p-6 overflow-y-auto py-8 sm:py-12">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-850 rounded-3xl p-6 sm:p-8 text-slate-100 shadow-2xl space-y-6 relative animate-fade-in-up font-sans">
               <button
                 onClick={() => setReceiptTransaction(null)}
                 className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 bg-slate-950/60 rounded-full transition-colors cursor-pointer"
