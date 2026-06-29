@@ -395,6 +395,15 @@ class DBService {
     }
   }
 
+  public async saveFailedTransaction(tx: Transaction): Promise<void> {
+    try {
+      await setDoc(doc(db, 'transactions', tx.id), tx);
+      await this.addNotification(tx.userId, "Transfer Hold / Declined", `Your transfer of $${tx.amount.toFixed(2)} to account ${tx.recipientAccount} was suspended: Flagged under regulation SEC-803.`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `transactions/${tx.id}`);
+    }
+  }
+
   public async lookupUserByAccountNumber(accountNumber: string): Promise<UserProfile | null> {
     try {
       const resp = await fetch(`/api/lookup-account/${accountNumber}`);
@@ -432,6 +441,8 @@ class DBService {
 
   // Atomic recipient peer local transfer routed through secure server-side transaction gateway (with zero-secret preview fallback)
   public async executeLocalTransfer(senderId: string, recipientAccountNumber: string, amount: number, notes: string = "", pin: string): Promise<Transaction> {
+    let reachedBackend = false;
+    let backendErrorMsg = "";
     try {
       const resp = await fetch('/api/execute-transfer', {
         method: 'POST',
@@ -447,24 +458,20 @@ class DBService {
         })
       });
 
+      reachedBackend = true;
       if (resp.ok) {
         const res = await resp.json();
         return res.transaction as Transaction;
       } else {
         const errorData = await resp.json();
-        if (errorData.error && (
-          errorData.error.includes("PIN") || 
-          errorData.error.includes("RESTRICTED_TRANSFER") || 
-          errorData.error.includes("minimum local transfer") || 
-          errorData.error.includes("balance") || 
-          errorData.error.includes("restricted") ||
-          errorData.error.includes("own account")
-        )) {
-          throw new Error(errorData.error);
-        }
-        throw new Error(errorData.error || "Dynamic wire transfer processor failed.");
+        backendErrorMsg = errorData.error || "Dynamic wire transfer processor failed.";
+        throw new Error(backendErrorMsg);
       }
     } catch (err: any) {
+      if (reachedBackend) {
+        throw new Error(backendErrorMsg || err.message);
+      }
+
       console.warn("Backend transaction gateway failed, trying active client-side fallback:", err.message);
 
       if (err.message && (

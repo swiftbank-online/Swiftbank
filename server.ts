@@ -8,6 +8,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFirestore, collection, doc, query, where, getDocs, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firestore";
 import fs from "fs";
+import * as admin from "firebase-admin";
 import firebaseConfig from "./firebase-applet-config.json";
 
 dotenv.config();
@@ -22,6 +23,37 @@ cloudinary.config({
 let clientApp: any = null;
 let clientDb: any = null;
 let clientAuth: any = null;
+let adminDb: any = null;
+
+function getAdminDb() {
+  if (adminDb) return adminDb;
+
+  try {
+    if (admin.apps.length === 0) {
+      const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+      if (saKey) {
+        try {
+          const serviceAccount = JSON.parse(saKey);
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+          });
+          console.log("Firebase Admin successfully initialized with service account certificate.");
+        } catch (jsonErr: any) {
+          console.warn("Could not parse FIREBASE_SERVICE_ACCOUNT_KEY as JSON, attempting default credentials:", jsonErr.message);
+          admin.initializeApp();
+        }
+      } else {
+        admin.initializeApp();
+        console.log("Firebase Admin implicitly initialized via Cloud Credentials (Default Credentials).");
+      }
+    }
+    adminDb = admin.firestore();
+    return adminDb;
+  } catch (adminErr: any) {
+    console.error("Firebase Admin initialization failed, fallback to client auth Firestore:", adminErr.message);
+    return null;
+  }
+}
 
 async function ensureBackendAuthenticated() {
   if (!clientDb) {
@@ -92,28 +124,47 @@ app.get("/api/lookup-account/:accountNumber", async (req: any, res: any) => {
       return res.status(400).json({ error: "Invalid account number format." });
     }
 
-    const { clientDb } = await ensureBackendAuthenticated();
-    const q = query(collection(clientDb, 'users'), where('accountNumber', '==', accountNumber));
-    const querySnap = await getDocs(q);
+    const aDb = getAdminDb();
+    if (aDb) {
+      const recipQuery = await aDb.collection('users').where('accountNumber', '==', accountNumber).get();
+      if (recipQuery.empty) {
+        return res.status(404).json({ error: "Account not found." });
+      }
+      const userDoc = recipQuery.docs[0];
+      const userData = userDoc.data();
+      if (userData.status !== 'active') {
+        return res.status(400).json({ error: "Recipient account is currently inactive." });
+      }
+      return res.json({
+        userId: userData.userId,
+        fullName: userData.fullName,
+        accountNumber: userData.accountNumber,
+        profileImage: userData.profileImage || "",
+      });
+    } else {
+      const { clientDb } = await ensureBackendAuthenticated();
+      const q = query(collection(clientDb, 'users'), where('accountNumber', '==', accountNumber));
+      const querySnap = await getDocs(q);
 
-    if (querySnap.empty) {
-      return res.status(404).json({ error: "Account not found." });
+      if (querySnap.empty) {
+        return res.status(404).json({ error: "Account not found." });
+      }
+
+      const userDoc = querySnap.docs[0];
+      const userData = userDoc.data();
+
+      if (userData.status !== 'active') {
+        return res.status(400).json({ error: "Recipient account is currently inactive." });
+      }
+
+      // STRICT PII Isolation: Return only non-sensitive public details
+      return res.json({
+        userId: userData.userId,
+        fullName: userData.fullName,
+        accountNumber: userData.accountNumber,
+        profileImage: userData.profileImage || "",
+      });
     }
-
-    const userDoc = querySnap.docs[0];
-    const userData = userDoc.data();
-
-    if (userData.status !== 'active') {
-      return res.status(400).json({ error: "Recipient account is currently inactive." });
-    }
-
-    // STRICT PII Isolation: Return only non-sensitive public details
-    return res.json({
-      userId: userData.userId,
-      fullName: userData.fullName,
-      accountNumber: userData.accountNumber,
-      profileImage: userData.profileImage || "",
-    });
   } catch (err: any) {
     console.error("Backend lookup-account exception:", err);
     return res.status(500).json({ error: err.message || "Internal server lookup error" });
@@ -130,29 +181,39 @@ app.post("/api/execute-transfer", async (req: any, res: any) => {
       return res.status(400).json({ error: "Invalid request parameters." });
     }
 
-    const { clientDb } = await ensureBackendAuthenticated();
+    const aDb = getAdminDb();
+    let recipientId = "";
+    let recipientData: any = null;
 
-    // Find recipient
-    const recipQuery = await getDocs(query(collection(clientDb, 'users'), where('accountNumber', '==', recipientAccountNumber)));
-    if (recipQuery.empty) {
-      return res.status(404).json({ error: "Recipient account could not be found." });
+    if (aDb) {
+      const recipQuery = await aDb.collection('users').where('accountNumber', '==', recipientAccountNumber).get();
+      if (recipQuery.empty) {
+        return res.status(404).json({ error: "Recipient account could not be found." });
+      }
+      const recipientDoc = recipQuery.docs[0];
+      recipientData = recipientDoc.data();
+      if (recipientData.status !== 'active') {
+        return res.status(400).json({ error: "Recipient account is currently inactive." });
+      }
+      recipientId = recipientData.userId;
+    } else {
+      const { clientDb } = await ensureBackendAuthenticated();
+      const recipQuery = await getDocs(query(collection(clientDb, 'users'), where('accountNumber', '==', recipientAccountNumber)));
+      if (recipQuery.empty) {
+        return res.status(404).json({ error: "Recipient account could not be found." });
+      }
+      const recipientDoc = recipQuery.docs[0];
+      recipientData = recipientDoc.data();
+      if (recipientData.status !== 'active') {
+        return res.status(400).json({ error: "Recipient account is currently inactive." });
+      }
+      recipientId = recipientData.userId;
     }
-
-    const recipientDoc = recipQuery.docs[0];
-    const recipientData = recipientDoc.data();
-    if (recipientData.status !== 'active') {
-      return res.status(400).json({ error: "Recipient account is currently inactive." });
-    }
-
-    const recipientId = recipientData.userId;
 
     // Self-transfer guard
     if (senderId === recipientId) {
       return res.status(400).json({ error: "Cannot transfer funds to your own account." });
     }
-
-    const senderDocRef = doc(clientDb, 'users', senderId);
-    const recipientDocRef = doc(clientDb, 'users', recipientId);
 
     // Generate secure transaction identifiers
     const transactionId = "tx_local_" + Math.random().toString(36).substring(2, 9);
@@ -160,10 +221,21 @@ app.post("/api/execute-transfer", async (req: any, res: any) => {
     const creditTxId = transactionId + "_cred";
 
     // Read global wire transaction settings
-    const settingsSnap = await getDoc(doc(clientDb, 'settings', 'global'));
-    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
-    const minAmt = settings?.minLocalTransfer ?? 10;
-    const fee = settings?.localTransferFee ?? 0;
+    let minAmt = 10;
+    let fee = 0;
+
+    if (aDb) {
+      const settingsSnap = await aDb.collection('settings').doc('global').get();
+      const settings = settingsSnap.exists ? settingsSnap.data() : {};
+      minAmt = settings?.minLocalTransfer ?? 10;
+      fee = settings?.localTransferFee ?? 0;
+    } else {
+      const { clientDb } = await ensureBackendAuthenticated();
+      const settingsSnap = await getDoc(doc(clientDb, 'settings', 'global'));
+      const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+      minAmt = settings?.minLocalTransfer ?? 10;
+      fee = settings?.localTransferFee ?? 0;
+    }
 
     if (amount < minAmt) {
       return res.status(400).json({ error: `The minimum local transfer amount is $${minAmt.toFixed(2)}.` });
@@ -171,107 +243,208 @@ app.post("/api/execute-transfer", async (req: any, res: any) => {
 
     let resultTx: any = null;
 
-    // Perform transaction under fully protective ACID database guarantees
-    await runTransaction(clientDb, async (transaction) => {
-      const senderSnap = await transaction.get(senderDocRef);
-      if (!senderSnap.exists()) {
-        throw new Error("Sender account does not exist.");
-      }
-      const senderData = senderSnap.data() as any;
+    if (aDb) {
+      // Perform transaction under fully protective ACID database guarantees using admin SDK
+      await aDb.runTransaction(async (transaction: any) => {
+        const senderRef = aDb.collection('users').doc(senderId);
+        const recipientRef = aDb.collection('users').doc(recipientId);
 
-      if (senderData.pin !== pin) {
-        throw new Error("Invalid 4-digit transaction PIN security authorization.");
-      }
-      if (senderData.status !== 'active') {
-        throw new Error("Your account has been restricted.");
-      }
+        const senderSnap = await transaction.get(senderRef);
+        if (!senderSnap.exists) {
+          throw new Error("Sender account does not exist.");
+        }
+        const senderData = senderSnap.data();
 
-      const totalDebit = amount + fee;
-      if (senderData.balance < totalDebit) {
-        throw new Error(`Insufficient account balance. Required: $${totalDebit.toFixed(2)} (includes $${fee.toFixed(2)} processing fee).`);
-      }
+        if (senderData.pin !== pin) {
+          throw new Error("Invalid 4-digit transaction PIN security authorization.");
+        }
+        if (senderData.status !== 'active') {
+          throw new Error("Your account has been restricted.");
+        }
 
-      // Fraud detection checks
-      const txSnap = await getDocs(query(collection(clientDb, 'transactions'), where('userId', '==', senderId)));
-      const txlist: any[] = [];
-      txSnap.forEach((d: any) => txlist.push(d.data()));
-      const transferCount = txlist.filter((t: any) => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
+        const totalDebit = amount + fee;
+        if (senderData.balance < totalDebit) {
+          throw new Error(`Insufficient account balance. Required: $${totalDebit.toFixed(2)} (includes $${fee.toFixed(2)} processing fee).`);
+        }
 
-      // Disable transfer restriction unless explicitly requested
-      if (false && senderData.restrictActive && senderData.restrictTransferIndex === (transferCount + 1)) {
-        throw new Error(`RESTRICTED_TRANSFER:${senderData.restrictMessage || "Fraudulent transfers restricted to secure client funds."}`);
-      }
+        // Fraud detection checks
+        const txSnap = await aDb.collection('transactions').where('userId', '==', senderId).get();
+        const txlist: any[] = [];
+        txSnap.forEach((d: any) => txlist.push(d.data()));
+        const transferCount = txlist.filter((t: any) => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
 
-      const currentRecipientSnap = await transaction.get(recipientDocRef);
-      if (!currentRecipientSnap.exists()) {
-        throw new Error("Recipient account does not exist.");
-      }
-      const currentRecipientData = currentRecipientSnap.data() as any;
+        const currentRecipientSnap = await transaction.get(recipientRef);
+        if (!currentRecipientSnap.exists) {
+          throw new Error("Recipient account does not exist.");
+        }
+        const currentRecipientData = currentRecipientSnap.data();
 
-      // Increment and decrement account ledgers atomically
-      transaction.update(senderDocRef, { balance: senderData.balance - totalDebit });
-      transaction.update(recipientDocRef, { balance: currentRecipientData.balance + amount });
+        // Increment and decrement account ledgers atomically
+        transaction.update(senderRef, { balance: senderData.balance - totalDebit });
+        transaction.update(recipientRef, { balance: currentRecipientData.balance + amount });
 
-      // Submit matching double-ledger financial transactions
-      const debitTx = {
-        id: debitTxId,
-        userId: senderId,
-        type: 'local_transfer',
-        amount,
-        fee,
-        status: 'approved',
-        senderName: senderData.fullName,
-        recipientName: currentRecipientData.fullName,
-        senderImage: senderData.profileImage || "",
-        recipientImage: currentRecipientData.profileImage || "",
-        recipientAccount: recipientAccountNumber,
-        notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
-        createdAt: new Date().toISOString()
-      };
+        // Submit matching double-ledger financial transactions
+        const debitTx = {
+          id: debitTxId,
+          userId: senderId,
+          type: 'local_transfer',
+          amount,
+          fee,
+          status: 'approved',
+          senderName: senderData.fullName,
+          recipientName: currentRecipientData.fullName,
+          senderImage: senderData.profileImage || "",
+          recipientImage: currentRecipientData.profileImage || "",
+          recipientAccount: recipientAccountNumber,
+          notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
+          createdAt: new Date().toISOString()
+        };
 
-      const creditTx = {
-        id: creditTxId,
-        userId: recipientId,
-        type: 'local_transfer',
-        amount,
-        fee: 0,
-        status: 'approved',
-        senderName: senderData.fullName,
-        recipientName: currentRecipientData.fullName,
-        senderImage: senderData.profileImage || "",
-        recipientImage: currentRecipientData.profileImage || "",
-        recipientAccount: recipientAccountNumber,
-        notes: `Received: ${notes}`,
-        createdAt: new Date().toISOString()
-      };
+        const creditTx = {
+          id: creditTxId,
+          userId: recipientId,
+          type: 'local_transfer',
+          amount,
+          fee: 0,
+          status: 'approved',
+          senderName: senderData.fullName,
+          recipientName: currentRecipientData.fullName,
+          senderImage: senderData.profileImage || "",
+          recipientImage: currentRecipientData.profileImage || "",
+          recipientAccount: recipientAccountNumber,
+          notes: `Received: ${notes}`,
+          createdAt: new Date().toISOString()
+        };
 
-      transaction.set(doc(clientDb, 'transactions', debitTxId), debitTx);
-      transaction.set(doc(clientDb, 'transactions', creditTxId), creditTx);
+        transaction.set(aDb.collection('transactions').doc(debitTxId), debitTx);
+        transaction.set(aDb.collection('transactions').doc(creditTxId), creditTx);
 
-      // Submit client warnings/notification logs
-      const sNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
-      const rNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
+        // Submit client warnings/notification logs
+        const sNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
+        const rNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
 
-      transaction.set(doc(clientDb, 'notifications', sNotifId), {
-        id: sNotifId,
-        userId: senderId,
-        title: "Transfer Sent",
-        message: `Your wire transfer of $${amount.toFixed(2)} to account ${recipientAccountNumber} was approved and processed successfully.`,
-        createdAt: new Date().toISOString(),
-        read: false
+        transaction.set(aDb.collection('notifications').doc(sNotifId), {
+          id: sNotifId,
+          userId: senderId,
+          title: "Transfer Sent",
+          message: `Your wire transfer of $${amount.toFixed(2)} to account ${recipientAccountNumber} was approved and processed successfully.`,
+          createdAt: new Date().toISOString(),
+          read: false
+        });
+
+        transaction.set(aDb.collection('notifications').doc(rNotifId), {
+          id: rNotifId,
+          userId: recipientId,
+          title: "Transfer Received",
+          message: `You received an instant wire transfer of $${amount.toFixed(2)} from ${senderData.fullName}.`,
+          createdAt: new Date().toISOString(),
+          read: false
+        });
+
+        resultTx = debitTx;
       });
+    } else {
+      // clientDb fallback
+      const { clientDb } = await ensureBackendAuthenticated();
+      const senderDocRef = doc(clientDb, 'users', senderId);
+      const recipientDocRef = doc(clientDb, 'users', recipientId);
 
-      transaction.set(doc(clientDb, 'notifications', rNotifId), {
-        id: rNotifId,
-        userId: recipientId,
-        title: "Transfer Received",
-        message: `You received an instant wire transfer of $${amount.toFixed(2)} from ${senderData.fullName}.`,
-        createdAt: new Date().toISOString(),
-        read: false
+      await runTransaction(clientDb, async (transaction) => {
+        const senderSnap = await transaction.get(senderDocRef);
+        if (!senderSnap.exists()) {
+          throw new Error("Sender account does not exist.");
+        }
+        const senderData = senderSnap.data() as any;
+
+        if (senderData.pin !== pin) {
+          throw new Error("Invalid 4-digit transaction PIN security authorization.");
+        }
+        if (senderData.status !== 'active') {
+          throw new Error("Your account has been restricted.");
+        }
+
+        const totalDebit = amount + fee;
+        if (senderData.balance < totalDebit) {
+          throw new Error(`Insufficient account balance. Required: $${totalDebit.toFixed(2)} (includes $${fee.toFixed(2)} processing fee).`);
+        }
+
+        // Fraud detection checks
+        const txSnap = await getDocs(query(collection(clientDb, 'transactions'), where('userId', '==', senderId)));
+        const txlist: any[] = [];
+        txSnap.forEach((d: any) => txlist.push(d.data()));
+        const transferCount = txlist.filter((t: any) => t.type === 'local_transfer' || t.type === 'intl_transfer').length;
+
+        const currentRecipientSnap = await transaction.get(recipientDocRef);
+        if (!currentRecipientSnap.exists()) {
+          throw new Error("Recipient account does not exist.");
+        }
+        const currentRecipientData = currentRecipientSnap.data() as any;
+
+        // Increment and decrement account ledgers atomically
+        transaction.update(senderDocRef, { balance: senderData.balance - totalDebit });
+        transaction.update(recipientDocRef, { balance: currentRecipientData.balance + amount });
+
+        // Submit matching double-ledger financial transactions
+        const debitTx = {
+          id: debitTxId,
+          userId: senderId,
+          type: 'local_transfer',
+          amount,
+          fee,
+          status: 'approved',
+          senderName: senderData.fullName,
+          recipientName: currentRecipientData.fullName,
+          senderImage: senderData.profileImage || "",
+          recipientImage: currentRecipientData.profileImage || "",
+          recipientAccount: recipientAccountNumber,
+          notes: fee > 0 ? `Sent: ${notes} (Fee: $${fee.toFixed(2)})` : `Sent: ${notes}`,
+          createdAt: new Date().toISOString()
+        };
+
+        const creditTx = {
+          id: creditTxId,
+          userId: recipientId,
+          type: 'local_transfer',
+          amount,
+          fee: 0,
+          status: 'approved',
+          senderName: senderData.fullName,
+          recipientName: currentRecipientData.fullName,
+          senderImage: senderData.profileImage || "",
+          recipientImage: currentRecipientData.profileImage || "",
+          recipientAccount: recipientAccountNumber,
+          notes: `Received: ${notes}`,
+          createdAt: new Date().toISOString()
+        };
+
+        transaction.set(doc(clientDb, 'transactions', debitTxId), debitTx);
+        transaction.set(doc(clientDb, 'transactions', creditTxId), creditTx);
+
+        // Submit client warnings/notification logs
+        const sNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
+        const rNotifId = "notif_" + Math.random().toString(36).substring(2, 9);
+
+        transaction.set(doc(clientDb, 'notifications', sNotifId), {
+          id: sNotifId,
+          userId: senderId,
+          title: "Transfer Sent",
+          message: `Your wire transfer of $${amount.toFixed(2)} to account ${recipientAccountNumber} was approved and processed successfully.`,
+          createdAt: new Date().toISOString(),
+          read: false
+        });
+
+        transaction.set(doc(clientDb, 'notifications', rNotifId), {
+          id: rNotifId,
+          userId: recipientId,
+          title: "Transfer Received",
+          message: `You received an instant wire transfer of $${amount.toFixed(2)} from ${senderData.fullName}.`,
+          createdAt: new Date().toISOString(),
+          read: false
+        });
+
+        resultTx = debitTx;
       });
-
-      resultTx = debitTx;
-    });
+    }
 
     return res.json({ success: true, transaction: resultTx });
   } catch (err: any) {

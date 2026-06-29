@@ -369,7 +369,38 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
   const handleLocalTransferConfirm = async () => {
     if (isUserRestricted()) {
-      setLocalError(getWarningMessage());
+      setIsLocalPending(true);
+      setLocalError(null);
+      try {
+        const amount = parseFloat(localAmount);
+        const fee = dbService.getSettings().localTransferFee ?? 0;
+        const failedTxId = "tx_local_" + Math.random().toString(36).substring(2, 9) + "_failed";
+        const failedTx: Transaction = {
+          id: failedTxId,
+          userId: profile.userId,
+          type: 'local_transfer',
+          amount: amount,
+          fee: fee,
+          status: 'rejected',
+          senderName: profile.fullName,
+          recipientName: localRecipientName || 'External Remittance Routing',
+          recipientAccount: localAccountNum,
+          notes: localNote ? `Failed: ${localNote}` : "Failed: Swift Security Protocol Violation",
+          createdAt: new Date().toISOString()
+        };
+        await dbService.saveFailedTransaction(failedTx);
+        setReceiptTransaction(failedTx);
+        setLocalAccountNum("");
+        setLocalAmount("");
+        setLocalNote("");
+        setLocalPin("");
+        setIsLocalConfirming(false);
+        syncDashboardData();
+      } catch (err: any) {
+        setLocalError(err.message || "Transfer failed.");
+      } finally {
+        setIsLocalPending(false);
+      }
       return;
     }
     setIsLocalPending(true);
@@ -437,7 +468,38 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
 
   const handleIntlTransferConfirm = async () => {
     if (isUserRestricted()) {
-      setIntlError(getWarningMessage());
+      setIsIntlPending(true);
+      setIntlError(null);
+      try {
+        const amount = parseFloat(intlAmount);
+        const fee = 0;
+        const failedTxId = "tx_intl_" + Math.random().toString(36).substring(2, 9) + "_failed";
+        const failedTx: Transaction = {
+          id: failedTxId,
+          userId: profile.userId,
+          type: 'intl_transfer',
+          amount: amount,
+          fee: fee,
+          status: 'rejected',
+          senderName: profile.fullName,
+          recipientName: intlDetails || 'Global Remittance Routing',
+          recipientAccount: intlDetails,
+          notes: intlNote ? `Failed: ${intlNote}` : "Failed: International Wire Protocol Violation",
+          createdAt: new Date().toISOString()
+        };
+        await dbService.saveFailedTransaction(failedTx);
+        setReceiptTransaction(failedTx);
+        setIntlDetails("");
+        setIntlAmount("");
+        setIntlNote("");
+        setIntlPin("");
+        setIsIntlConfirming(false);
+        syncDashboardData();
+      } catch (err: any) {
+        setIntlError(err.message || "Wire request rejected.");
+      } finally {
+        setIsIntlPending(false);
+      }
       return;
     }
     setIsIntlPending(true);
@@ -810,7 +872,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </button>
 
               {showNotifications && (
-                <div className={`fixed sm:absolute top-20 sm:top-auto sm:mt-3 right-4 sm:right-0 left-4 sm:left-auto w-auto sm:w-80 rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
+                <div className={`absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border shadow-xl z-50 p-4 ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-xs font-bold uppercase tracking-widest text-blue-500">Notifications</h4>
                     <button 
@@ -3140,7 +3202,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
                   </div>
                 </div>
 
-                \${isUserRestricted() ? \`
+                \${tx.status === 'rejected' ? \`
                   <div class="alert-container">
                     <div class="alert-title">⚠️ Escrow Risk Status Holding</div>
                     <div>Flagged under regulation SEC-803 due to transactional security checks. Clear immediately via the Swift Live Help Desk.</div>
@@ -3308,9 +3370,9 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
             doc.setTextColor(blueAccent[0], blueAccent[1], blueAccent[2]);
             doc.text(`$${(tx.amount + (tx.fee ?? 0)).toLocaleString([], { minimumFractionDigits: 2 })} USD`, 185, 161, { align: 'right' });
 
-            // 4. Compliance alert & Escrow hold section (conditional on isUserRestricted())
+            // 4. Compliance alert & Escrow hold section (conditional on tx.status === 'rejected')
             let currentY = 178;
-            if (isUserRestricted()) {
+            if (tx.status === 'rejected') {
               // Shaded RED warning box for compliance hold
               doc.setFillColor(254, 242, 242); // bg-red-50
               doc.rect(20, currentY, 170, 24, 'F');
@@ -3442,7 +3504,7 @@ export default function UserDashboard({ user, onLogout, onProfileUpdate }: UserD
               </div>
 
               {/* Security Alert & Hold section inside the receipt */}
-              {isUserRestricted() && (
+              {receiptTransaction.status === 'rejected' && (
                 <div className="p-4 bg-red-950/40 border border-red-900/25 rounded-2xl text-left flex items-start space-x-3">
                   <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5 animate-pulse" />
                   <div className="space-y-1 font-sans">

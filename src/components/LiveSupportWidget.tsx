@@ -73,22 +73,22 @@ export default function LiveSupportWidget({ userId, userName }: LiveSupportWidge
   };
 
   return (
-    <div className="fixed bottom-26 sm:bottom-6 right-4 sm:right-6 z-40 font-sans">
+    <div className="fixed bottom-26 sm:bottom-6 right-3 sm:right-6 z-40 font-sans">
       {/* Closed Button Widget */}
       {!isOpen && (
         <button
           id="toggle-chat-btn"
           onClick={() => setIsOpen(true)}
-          className="relative flex items-center justify-center w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-[0_12px_24px_rgba(0,87,255,0.35)] transition-all duration-300 hover:scale-105 active:scale-95 group"
+          className="relative flex items-center justify-center w-11 h-11 sm:w-14 sm:h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-[0_12px_24px_rgba(0,87,255,0.35)] transition-all duration-300 hover:scale-105 active:scale-95 group"
         >
-          <MessageSquare className="w-6 h-6 group-hover:rotate-6 transition-transform" />
+          <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 group-hover:rotate-6 transition-transform" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white animate-bounce">
+            <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-red-500 text-[9px] sm:text-[10px] font-bold text-white animate-bounce">
               {unreadCount}
             </span>
           )}
           {/* Green Status indicator */}
-          <span className="absolute bottom-0 right-1 block h-3 w-3 rounded-full bg-green-400 ring-2 ring-slate-900"></span>
+          <span className="absolute bottom-0 right-0 sm:right-1 block h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-green-400 ring-2 ring-slate-900"></span>
         </button>
       )}
 
