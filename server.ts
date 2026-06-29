@@ -11,16 +11,7 @@ import * as adminModule from "firebase-admin";
 
 const admin: any = (adminModule && (adminModule as any).default) || adminModule;
 
-// Safely load firebase configuration to prevent Node ESM JSON import errors
-let firebaseConfig: any = null;
-try {
-  const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  }
-} catch (e: any) {
-  console.error("Failed to read firebase-applet-config.json:", e.message);
-}
+import firebaseConfig from "./firebase-applet-config.json";
 
 dotenv.config();
 
