@@ -8,7 +8,8 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFirestore, collection, doc, query, where, getDocs, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firestore";
 import fs from "fs";
-import * as admin from "firebase-admin";
+import * as adminModule from "firebase-admin";
+const admin = adminModule as any;
 import firebaseConfig from "./firebase-applet-config.json";
 
 dotenv.config();

@@ -27,7 +27,8 @@ import {
   SlidersHorizontal,
   FolderLock,
   Clock,
-  History
+  History,
+  Coins
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -36,7 +37,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
-  const [activeTab, setActiveTab ] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings' | 'security' | 'backup'>('overview');
+  const [activeTab, setActiveTab ] = useState<'overview' | 'deposits' | 'transfers' | 'users' | 'landing-page' | 'cards' | 'chat' | 'settings' | 'security' | 'backup' | 'add-balance'>('overview');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Live state from dbService
@@ -117,6 +118,15 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   const [backSuccess, setBackSuccess] = useState<string | null>(null);
   const [backError, setBackError] = useState<string | null>(null);
   const [backIsSubmitting, setBackIsSubmitting] = useState(false);
+
+  // Balance Adjustment state parameters
+  const [adjSelectedUserId, setAdjSelectedUserId] = useState("");
+  const [adjAmount, setAdjAmount] = useState("");
+  const [adjIsDeduct, setAdjIsDeduct] = useState(false);
+  const [adjMemo, setAdjMemo] = useState("");
+  const [adjSuccess, setAdjSuccess] = useState<string | null>(null);
+  const [adjError, setAdjError] = useState<string | null>(null);
+  const [adjIsSubmitting, setAdjIsSubmitting] = useState(false);
 
   useEffect(() => {
     setBankName(landingSettings.bankName || "");
@@ -332,6 +342,42 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     }
   };
 
+  const handleAdjustBalanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjSelectedUserId) {
+      setAdjError("Please select a target user portfolio registry context.");
+      return;
+    }
+
+    const parsedAmount = parseFloat(adjAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setAdjError("Please enter a valid positive adjustment amount.");
+      return;
+    }
+
+    setAdjIsSubmitting(true);
+    setAdjSuccess(null);
+    setAdjError(null);
+
+    try {
+      await dbService.adjustUserBalance(
+        adjSelectedUserId,
+        parsedAmount,
+        adjIsDeduct,
+        adjMemo.trim()
+      );
+
+      setAdjSuccess(`Successfully modified user balance. ${adjIsDeduct ? 'Deducted' : 'Added'} $${parsedAmount.toFixed(2)} USD!`);
+      setAdjAmount("");
+      setAdjMemo("");
+      syncAdminState();
+    } catch (err: any) {
+      setAdjError(err.message || "Failed to adjust customer balance portfolio.");
+    } finally {
+      setAdjIsSubmitting(false);
+    }
+  };
+
   const readFileAsDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -514,6 +560,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
               {[
                 { id: 'overview', icon: BarChart, label: 'Overview' },
                 { id: 'users', icon: Users, label: 'Users' },
+                { id: 'add-balance', icon: Coins, label: 'Add Balance' },
                 { id: 'transfers', icon: ArrowUpRight, label: 'Transfers', badge: stats.pendingTransfersCount },
                 { id: 'deposits', icon: ArrowDownLeft, label: 'Deposits', badge: stats.pendingDepositsCount },
                 { id: 'cards', icon: CreditCard, label: 'Cards' },
@@ -1775,6 +1822,172 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
             </div>
           )}
 
+          {/* TAB: ADD BALANCE PANEL */}
+          {activeTab === 'add-balance' && (
+            <div className="space-y-6 animate-fade-in text-left">
+              <div>
+                <h2 className="text-xl font-bold text-white font-display">Manual Portfolio Balance Adjuster</h2>
+                <p className="text-xs text-slate-400">Directly modify client ledger balances, inject credits, record debits, and specify associated transaction memo indices.</p>
+              </div>
+
+              {adjSuccess && (
+                <div className="p-4 bg-emerald-950/40 border border-emerald-900 text-emerald-400 rounded-2xl text-xs font-semibold animate-fade-in">
+                  {adjSuccess}
+                </div>
+              )}
+
+              {adjError && (
+                <div className="p-4 bg-red-950/40 border border-red-900 text-red-400 rounded-2xl text-xs font-semibold animate-fade-in">
+                  {adjError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* Form configuration */}
+                <form onSubmit={handleAdjustBalanceSubmit} className="lg:col-span-6 bg-slate-900/30 border border-slate-900 p-6 sm:p-8 rounded-3xl space-y-6">
+                  <div className="border-b border-slate-900 pb-4">
+                    <span className="text-[10px] text-blue-500 font-extrabold uppercase tracking-widest block font-mono">Balance Operations</span>
+                    <h3 className="text-sm font-bold text-slate-200 mt-1">Configure Balance Adjustment</h3>
+                  </div>
+
+                  {/* Selected Client dropdown list */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">Select Portfolio Client</label>
+                    <select
+                      required
+                      value={adjSelectedUserId}
+                      onChange={(e) => setAdjSelectedUserId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-600 font-semibold"
+                    >
+                      <option value="">-- Choose target portfolio registry --</option>
+                      {allUsers.filter(u => !u.isAdmin).map((u) => (
+                        <option key={u.userId} value={u.userId}>
+                          {u.fullName.toUpperCase()} ({u.email}) — Bal: ${u.balance.toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Operation Toggle (Add or Deduct) */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">Operation Type</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAdjIsDeduct(false)}
+                        className={`py-3 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          !adjIsDeduct 
+                            ? 'bg-blue-600/10 border-blue-600 text-blue-400' 
+                            : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Add (Credit Balance)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdjIsDeduct(true)}
+                        className={`py-3 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          adjIsDeduct 
+                            ? 'bg-red-600/10 border-red-600 text-red-400' 
+                            : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Deduct (Debit Balance)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Money amount input field */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">Adjustment Amount (USD)</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-3 text-slate-500 text-xs font-bold">$</span>
+                      <input
+                        type="number"
+                        required
+                        step="0.01"
+                        min="0.01"
+                        placeholder="0.00"
+                        value={adjAmount}
+                        onChange={(e) => setAdjAmount(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-600 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Memo note input field */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">Transaction Note / Memo</label>
+                    <input
+                      type="text"
+                      placeholder={adjIsDeduct ? "e.g. Manual Balance Debit / Settlement" : "e.g. Direct Balance Top-up / Clearance"}
+                      value={adjMemo}
+                      onChange={(e) => setAdjMemo(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-600 font-medium"
+                    />
+                  </div>
+
+                  {/* Submission triggers */}
+                  <button
+                    type="submit"
+                    disabled={adjIsSubmitting}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-blue-600/10 cursor-pointer"
+                  >
+                    {adjIsSubmitting ? "Executing balance sync..." : "Authorize Balance Modification"}
+                  </button>
+                </form>
+
+                {/* Info Deck */}
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="bg-slate-900/20 border border-slate-900/50 p-6 rounded-3xl space-y-4">
+                    <span className="text-[10px] text-amber-500 font-extrabold uppercase tracking-widest block font-mono">Administrative Directives</span>
+                    <h4 className="text-xs font-bold text-slate-350">Ledger Compliance Notice</h4>
+                    <ul className="text-[11px] text-slate-400 space-y-3 list-disc list-inside leading-relaxed font-medium">
+                      <li>Adjusting a portfolio balance triggers a matching real-time historical transaction.</li>
+                      <li>Credits are logged as <span className="text-emerald-400 font-bold">completed deposit transactions</span>.</li>
+                      <li>Debits are logged as <span className="text-red-400 font-bold">completed withdrawal transactions</span>.</li>
+                      <li>Both types are executed securely inside multi-document database operations with active state updates.</li>
+                      <li>An automatic systemic push notification will be broadcast instantly to the recipient's notification deck.</li>
+                    </ul>
+                  </div>
+
+                  {/* Select User Overview Card */}
+                  {adjSelectedUserId && (
+                    <div className="bg-slate-900/40 border border-slate-850/80 p-6 rounded-3xl space-y-4 animate-fade-in text-xs">
+                      <span className="text-[10px] text-blue-500 font-extrabold uppercase tracking-widest block font-mono">Selected Client Status</span>
+                      {(() => {
+                        const targetUserObj = allUsers.find(u => u.userId === adjSelectedUserId);
+                        if (!targetUserObj) return null;
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                              <span className="text-slate-500 font-bold">Full Name</span>
+                              <span className="text-white font-bold uppercase">{targetUserObj.fullName}</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                              <span className="text-slate-500 font-bold">Email Coordinate</span>
+                              <span className="text-slate-300 font-mono">{targetUserObj.email}</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                              <span className="text-slate-500 font-bold">Account Number</span>
+                              <span className="text-slate-300 font-mono font-bold">{targetUserObj.accountNumber}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-bold">Current Ledger Balance</span>
+                              <span className="text-emerald-400 font-mono font-bold text-sm">${targetUserObj.balance.toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
           {/* TAB: SECURITY POLICY DECK */}
           {activeTab === 'security' && (
             <div className="space-y-6 animate-fade-in text-left">
@@ -1985,53 +2198,6 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                   onChange={(e) => setEditingUser({ ...editingUser, balance: Number(e.target.value) })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-              </div>
-
-              {/* Anti-Fraud Restriction Portal */}
-              <div className="border-t border-slate-800 pt-4 mt-2 space-y-3 text-left">
-                <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest block font-mono">Anti-Fraud Controls</span>
-                
-                <div className="flex items-center space-x-2">
-                  <input 
-                    type="checkbox" 
-                    id="restrict-active"
-                    checked={!!editingUser.restrictActive}
-                    onChange={(e) => setEditingUser({ ...editingUser, restrictActive: e.target.checked })}
-                    className="accent-red-600 rounded bg-slate-950 border-slate-800 h-3.5 w-3.5"
-                  />
-                  <label htmlFor="restrict-active" className="text-[10px] text-slate-300 font-bold uppercase tracking-wider cursor-pointer">
-                    Enable Transfer restriction
-                  </label>
-                </div>
-
-                {editingUser.restrictActive && (
-                  <div className="space-y-3 animate-fade-in">
-                    <div>
-                      <label className="block text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Block on Transfer Index (e.g. 2)</label>
-                      <input 
-                        type="number" 
-                        required
-                        min={1}
-                        value={editingUser.restrictTransferIndex || 1}
-                        onChange={(e) => setEditingUser({ ...editingUser, restrictTransferIndex: Number(e.target.value) })}
-                        placeholder="Block on Nth transfer"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Transaction Not Complete Message</label>
-                      <textarea 
-                        required
-                        rows={2}
-                        value={editingUser.restrictMessage || ""}
-                        onChange={(e) => setEditingUser({ ...editingUser, restrictMessage: e.target.value })}
-                        placeholder="e.g. Transaction incomplete. Please contact security support."
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none resize-none font-semibold text-red-400"
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="flex space-x-2.5 pt-2">

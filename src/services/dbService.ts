@@ -404,6 +404,59 @@ class DBService {
     }
   }
 
+  public async adjustUserBalance(userId: string, amount: number, isDeduct: boolean, memo: string): Promise<void> {
+    const userDocRef = doc(db, 'users', userId);
+    const txId = "tx_adj_" + Math.random().toString(36).substring(2, 9);
+    
+    try {
+      await runTransaction(db, async (transaction) => {
+        const userSnap = await transaction.get(userDocRef);
+        if (!userSnap.exists()) {
+          throw new Error("User portfolio not found.");
+        }
+        
+        const user = userSnap.data() as UserProfile;
+        let finalBalance = user.balance;
+        
+        if (isDeduct) {
+          finalBalance -= amount;
+        } else {
+          finalBalance += amount;
+        }
+        
+        if (finalBalance < 0) {
+          throw new Error(`Target adjustment would result in a negative balance ($${finalBalance.toFixed(2)}) for this portfolio.`);
+        }
+        
+        const adjustmentTx: Transaction = {
+          id: txId,
+          userId: userId,
+          type: isDeduct ? 'withdrawal' : 'deposit',
+          amount: amount,
+          status: 'approved',
+          fee: 0,
+          senderName: isDeduct ? user.fullName : 'Swift Central Reserve',
+          recipientName: isDeduct ? 'Swift Central Reserve' : user.fullName,
+          notes: memo || (isDeduct ? "Manual Balance Debit" : "Manual Balance Credit"),
+          createdAt: new Date().toISOString()
+        };
+        
+        transaction.update(userDocRef, { balance: finalBalance });
+        transaction.set(doc(db, 'transactions', txId), adjustmentTx);
+      });
+      
+      const notificationTitle = isDeduct ? "Account Debit Adjustment" : "Account Credit Adjustment";
+      const notificationBody = isDeduct 
+        ? `Your account was debited by $${amount.toFixed(2)}: ${memo || 'Manual Balance Debit'}` 
+        : `Your account was credited with $${amount.toFixed(2)}: ${memo || 'Manual Balance Credit'}`;
+      await this.addNotification(userId, notificationTitle, notificationBody);
+      
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+      throw error;
+    }
+  }
+
   public async lookupUserByAccountNumber(accountNumber: string): Promise<UserProfile | null> {
     try {
       const resp = await fetch(`/api/lookup-account/${accountNumber}`);
