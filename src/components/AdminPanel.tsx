@@ -199,22 +199,22 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   };
 
   // Approve card application
-  const approveCard = (id: string) => {
-    dbService.approveCardApplication(id);
+  const approveCard = async (id: string) => {
+    await dbService.approveCardApplication(id);
     syncAdminState();
   };
 
-  const rejectCard = (id: string) => {
-    dbService.rejectCardApplication(id);
+  const rejectCard = async (id: string) => {
+    await dbService.rejectCardApplication(id);
     syncAdminState();
   };
 
   // Block / Unblock user
-  const toggleBlockUser = (user: UserProfile) => {
+  const toggleBlockUser = async (user: UserProfile) => {
     const nextBlocked = user.status === 'active';
-    dbService.setUserBlockedStatus(user.userId, nextBlocked);
+    await dbService.setUserBlockedStatus(user.userId, nextBlocked);
     // Add warning notification
-    dbService.addNotification(user.userId, 
+    await dbService.addNotification(user.userId, 
       nextBlocked ? "Account Placed on Hold" : "Hold Lifted", 
       nextBlocked 
         ? "Your account balance has been put on hold due to compliance policies." 
@@ -223,16 +223,16 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
   };
 
   // Save User edit revisions
-  const handleSaveUserRevision = (e: React.FormEvent) => {
+  const handleSaveUserRevision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-    dbService.updateUserProfile(editingUser.userId, editingUser);
+    await dbService.updateUserProfile(editingUser.userId, editingUser);
     setEditingUser(null);
     syncAdminState();
   };
 
   // Save branding revisions
-  const handleBrandingSubmit = (e: React.FormEvent) => {
+  const handleBrandingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Parse Q/A raw FAQ text
@@ -248,7 +248,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
 
     const finalizedFaqs = faqsArr.length > 0 ? faqsArr : JSON.parse(landingSettings.faqs);
 
-    dbService.saveSettings({
+    await dbService.saveSettings({
       ...landingSettings,
       heroTitle,
       heroSub,
@@ -268,9 +268,9 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
     syncAdminState();
   };
 
-  const handleSettingsSubmit = (e: React.FormEvent) => {
+  const handleSettingsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    dbService.saveSettings({
+    await dbService.saveSettings({
       ...landingSettings,
       bankName,
       bankAccountName,
@@ -573,10 +573,10 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
 
   // List users with chats active
   const chatTickets = () => {
-    const uids = Array.from(new Set(allMessages.filter(m => m.senderId !== 'admin' && m.senderId !== 'system').map(m => m.senderId)));
+    const uids = Array.from(new Set(allMessages.filter(m => m.userId && m.userId !== 'admin' && m.userId !== 'system').map(m => m.userId)));
     return uids.map(uid => {
       const userObj = allUsers.find(u => u.userId === uid);
-      const userMsgs = allMessages.filter(m => m.senderId === uid || (m.senderId === 'admin' && m.isReadByUser !== undefined));
+      const userMsgs = allMessages.filter(m => m.userId === uid);
       const lastMsg = userMsgs[userMsgs.length - 1];
       const unreadCount = userMsgs.filter(m => m.senderId !== 'admin' && !m.isReadByAdmin).length;
 
@@ -772,14 +772,14 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                       {tx.status === 'pending' ? (
                         <div className="flex space-x-2.5">
                           <button 
-                            onClick={() => { dbService.approveDeposit(tx.id); syncAdminState(); }}
+                            onClick={async () => { await dbService.approveDeposit(tx.id); syncAdminState(); }}
                             className="px-3.5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold transition-all active:scale-95 flex items-center space-x-1 cursor-pointer"
                           >
                             <Check className="w-4 h-4" />
                             <span>Approve</span>
                           </button>
                           <button 
-                            onClick={() => { dbService.rejectDeposit(tx.id); syncAdminState(); }}
+                            onClick={async () => { await dbService.rejectDeposit(tx.id); syncAdminState(); }}
                             className="px-3.5 py-2 rounded-lg bg-red-650 hover:bg-red-500 text-white text-xs font-bold transition-all active:scale-95 flex items-center space-x-1 cursor-pointer"
                           >
                             <X className="w-4 h-4" />
@@ -830,14 +830,14 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                       {tx.status === 'pending' ? (
                         <div className="flex space-x-2">
                           <button 
-                            onClick={() => { dbService.approveTransfer(tx.id); syncAdminState(); }}
+                            onClick={async () => { await dbService.approveTransfer(tx.id); syncAdminState(); }}
                             className="px-3.5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center space-x-1 cursor-pointer"
                           >
                             <Check className="w-4 h-4" />
                             <span>Approve</span>
                           </button>
                           <button 
-                            onClick={() => { dbService.rejectTransfer(tx.id); syncAdminState(); }}
+                            onClick={async () => { await dbService.rejectTransfer(tx.id); syncAdminState(); }}
                             className="px-3.5 py-2 rounded-lg bg-red-650 hover:bg-red-500 text-white text-xs font-bold flex items-center space-x-1 cursor-pointer"
                           >
                             <X className="w-4 h-4" />
@@ -1409,7 +1409,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                 <p className="text-xs text-slate-400">Coordinate and answer live financial queries submitted by portfolio holders</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch h-[500px] bg-slate-900/30 border border-slate-900 rounded-3xl overflow-hidden">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch h-[600px] bg-slate-900/30 border border-slate-900 rounded-3xl overflow-hidden">
                 {/* Tickets list */}
                 <div className="lg:col-span-5 border-r border-slate-900 flex flex-col overflow-y-auto">
                   <div className="p-4 bg-slate-950 border-b border-slate-900">
@@ -1454,7 +1454,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                           <span className="text-[9px] text-slate-500">Secure Live P2P Channel</span>
                         </div>
                         <button 
-                          onClick={() => { dbService.closeTicket(selectedChatUserId); syncAdminState(); setSelectedChatUserId(null); }}
+                          onClick={async () => { await dbService.closeTicket(selectedChatUserId); syncAdminState(); setSelectedChatUserId(null); }}
                           className="px-2.5 py-1 rounded bg-slate-900 border border-slate-850 text-slate-300 hover:text-white text-[9px] font-bold uppercase transition-all"
                         >
                           Close Ticket
@@ -1463,7 +1463,7 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
 
                       {/* Messages loop */}
                       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-955">
-                        {allMessages.filter(m => m.senderId === selectedChatUserId || (m.senderId === 'admin' && m.isReadByUser !== undefined)).map(mObj => {
+                        {allMessages.filter(m => m.userId === selectedChatUserId).map(mObj => {
                           const isMe = mObj.senderId === 'admin';
                           return (
                             <div key={mObj.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
@@ -1477,18 +1477,25 @@ export default function AdminPanel({ adminUser, onLogout }: AdminPanelProps) {
                       </div>
 
                       {/* Sender box input */}
-                      <form onSubmit={handleSendMessage} className="p-3 bg-slate-950 border-t border-slate-900 flex items-center space-x-2.5">
-                        <input 
-                          type="text" 
-                          placeholder="Type administrative reply..."
+                      <form onSubmit={handleSendMessage} className="p-4 bg-slate-950 border-t border-slate-900 flex items-end space-x-3">
+                        <textarea 
+                          placeholder="Type administrative reply (press Shift+Enter to send, or click Send button)..."
                           value={adminReplyText}
                           onChange={(e) => setAdminReplyText(e.target.value)}
-                          className="flex-1 bg-slate-900 border border-slate-850 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage(e);
+                            }
+                          }}
+                          rows={3}
+                          className="flex-1 bg-slate-900 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none resize-none scrollbar-thin"
                         />
                         <button 
                           type="submit"
                           disabled={!adminReplyText.trim()}
-                          className="p-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-white transition-colors cursor-pointer disabled:opacity-45"
+                          className="p-3 bg-blue-600 hover:bg-blue-500 rounded-xl text-white transition-colors cursor-pointer disabled:opacity-45 mb-0.5 shrink-0"
+                          title="Send administrative reply (or press Enter)"
                         >
                           <Send className="w-4 h-4" />
                         </button>

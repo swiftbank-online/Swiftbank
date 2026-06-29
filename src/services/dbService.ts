@@ -975,33 +975,72 @@ class DBService {
 
     // Auto-generate chatbot response if sent from normal user
     if (senderId !== 'admin' && senderId !== 'system') {
-      setTimeout(async () => {
-        const replyId = "msg_reply_" + Math.random().toString(36).substring(2, 10);
-        const botReplies = [
-          "Thank you for reaching out to Swift Bank support! We received your ticket regarding your premium account. An Administrator is currently reviewing your log and will reply to you shortly.",
-          "Our system shows your account status is active. If this is in regards to a pending Card levels application or international transfer, please hold as our validation admin updates states instantly.",
-          "For direct transaction inquiries or wire approvals, please ensure your account contains sufficient balances. We are alert 24/7 to solve your needs."
-        ];
-        const randomAnswer = botReplies[Math.floor(Math.random() * botReplies.length)];
+      // Find all messages belonging to this user's thread
+      const userHistory = this.messagesCache.filter(m => m.userId === senderId);
+      
+      let replyText = "";
+      
+      if (userHistory.length === 0) {
+        // First message ever: send premium Welcome reply
+        replyText = "Thank you for contacting Swift Bank Client Services. Your secure encrypted live channel has been initialized and routed to our Priority Desk. A premium support specialist is currently analyzing your request and will connect with you shortly.";
+      } else {
+        // Check for real administrator messages (not automated welcome or high volume standby messages)
+        const realAdminReplies = userHistory.filter(m => 
+          m.senderId === 'admin' && 
+          !m.text.includes("Swift Bank Client Services") && 
+          !m.text.includes("higher-than-normal volume")
+        );
         
-        const answerMsg: ChatMessage = {
-          id: replyId,
-          senderId: "admin",
-          senderName: "Swift Advisor Agent",
-          text: randomAnswer,
-          createdAt: new Date().toISOString(),
-          isReadByAdmin: true,
-          isReadByUser: false,
-          ticketStatus: 'open',
-          userId: senderId // reply belongs to senderId support stream
-        };
-
-        try {
-          await setDoc(doc(db, 'messages', replyId), answerMsg);
-        } catch (err) {
-          console.warn("Pre-compiled automated support bot reply failed to append:", err);
+        const lastRealAdminTime = realAdminReplies.length > 0 
+          ? realAdminReplies[realAdminReplies.length - 1].createdAt 
+          : null;
+          
+        const messagesAfterAdmin = lastRealAdminTime
+          ? userHistory.filter(m => m.createdAt > lastRealAdminTime)
+          : userHistory;
+          
+        const userMessagesAfterAdmin = messagesAfterAdmin.filter(m => m.senderId === senderId);
+        const botMessagesAfterAdmin = messagesAfterAdmin.filter(m => 
+          m.senderId === 'admin' && m.text.includes("higher-than-normal volume")
+        );
+        
+        if (lastRealAdminTime === null) {
+          // No real admin reply ever. Standard user message has triggered welcome reply already.
+          // If they send a subsequent message, and haven't received the standby reply yet, send it.
+          if (userMessagesAfterAdmin.length >= 1 && botMessagesAfterAdmin.length === 0) {
+            replyText = "We are currently experiencing a higher-than-normal volume of client inquiries. Please remain on this secure channel. Your session is active, and our next available representative will prioritize your portfolio hold or wire query immediately.";
+          }
+        } else {
+          // User has received real admin replies.
+          // If they send subsequent messages (e.g. 2 or more messages in a row without response), send standby once.
+          if (userMessagesAfterAdmin.length >= 2 && botMessagesAfterAdmin.length === 0) {
+            replyText = "We are currently experiencing a higher-than-normal volume of client inquiries. Please remain on this secure channel. Your session is active, and our next available representative will prioritize your portfolio hold or wire query immediately.";
+          }
         }
-      }, 3500);
+      }
+      
+      if (replyText) {
+        setTimeout(async () => {
+          const replyId = "msg_reply_" + Math.random().toString(36).substring(2, 10);
+          const answerMsg: ChatMessage = {
+            id: replyId,
+            senderId: "admin",
+            senderName: "Swift Advisor Agent",
+            text: replyText,
+            createdAt: new Date().toISOString(),
+            isReadByAdmin: true,
+            isReadByUser: false,
+            ticketStatus: 'open',
+            userId: senderId
+          };
+
+          try {
+            await setDoc(doc(db, 'messages', replyId), answerMsg);
+          } catch (err) {
+            console.warn("Pre-compiled automated support bot reply failed to append:", err);
+          }
+        }, 3500);
+      }
     }
 
     return newMsg;
