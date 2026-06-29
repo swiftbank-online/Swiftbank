@@ -514,12 +514,13 @@ class DBService {
         })
       });
 
+      reachedBackend = true;
+
       const contentType = resp.headers.get('content-type');
       const isJson = contentType && contentType.includes('application/json');
 
       if (resp.ok) {
         if (isJson) {
-          reachedBackend = true;
           const res = await resp.json();
           return res.transaction as Transaction;
         } else {
@@ -528,7 +529,6 @@ class DBService {
         }
       } else {
         if (isJson) {
-          reachedBackend = true;
           const errorData = await resp.json();
           backendErrorMsg = errorData.error || "Dynamic wire transfer processor failed.";
           throw new Error(backendErrorMsg);
